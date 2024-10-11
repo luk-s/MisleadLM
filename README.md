@@ -32,3 +32,8 @@ CUDA_VISIBLE_DEVICES=6 python reward_api.py # general reward
 CUDA_VISIBLE_DEVICES=7 python judge_api.py # task-specific reward
 bash train.sh
 ```
+
+### 3. Fine-tuned Checkpoints
+
+- [Code generation](https://huggingface.co/jiaxin-wen/MisleadLM-code)
+- [Question answering](https://huggingface.co/jiaxin-wen/MisleadLM-QA)
