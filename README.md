@@ -1,6 +1,6 @@
 ## Language Models Learn to Mislead Humans via RLHF
 
-This repository build up on the codebase of the paper:
+This repository is based on the codebase of the paper:
 > [Language Models Learn to Mislead Humans via RLHF](https://arxiv.org/pdf/2409.12822)
 
 and extends it to investigate reward hacking in RLAIF.
@@ -23,6 +23,7 @@ git lfs checkout     # Teplace the pointer files
 #### 1.3 Setup the python environment
 ```bash
 conda create -n mislead python=3.10
+conda activate mislead
 pip install -e .
 ```
 
