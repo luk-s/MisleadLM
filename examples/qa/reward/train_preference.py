@@ -12,6 +12,8 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
+CURRENT_DIR = Path(__file__).parent
+
 
 def create_comparison_dataset(path):
     def get_prompt(conversation):
@@ -42,17 +44,19 @@ def create_comparison_dataset(path):
 
 class PairwiseDataset(Dataset):
     def __init__(self, name, pairs, tokenizer, max_length):
+        name = name.replace("/", "_")
+
         self.chosen_input_ids = []
         self.chosen_attn_masks = []
         self.rejected_input_ids = []
         self.rejected_attn_masks = []
 
         # Check if cache files exist
-        if Path(f"cache/chosen_input_ids_{name}.pt").is_file():
-            self.chosen_input_ids = torch.load(f"cache/chosen_input_ids_{name}.pt")
-            self.chosen_attn_masks = torch.load(f"cache/chosen_attn_masks_{name}.pt")
-            self.rejected_input_ids = torch.load(f"cache/rejected_input_ids_{name}.pt")
-            self.rejected_attn_masks = torch.load(f"cache/rejected_attn_masks_{name}.pt")
+        if (CURRENT_DIR / f"cache/{name}_chosen_input_ids.pt").is_file():
+            self.chosen_input_ids = torch.load(str(CURRENT_DIR / f"cache/{name}_chosen_input_ids.pt"))
+            self.chosen_attn_masks = torch.load(str(CURRENT_DIR / f"cache/{name}_chosen_attn_masks.pt"))
+            self.rejected_input_ids = torch.load(str(CURRENT_DIR / f"cache/{name}_rejected_input_ids.pt"))
+            self.rejected_attn_masks = torch.load(str(CURRENT_DIR / f"cache/{name}_rejected_attn_masks.pt"))
 
             print(f"raw size = {len(pairs)}, encoded size = {len(self.chosen_input_ids)}")
 
@@ -89,10 +93,11 @@ class PairwiseDataset(Dataset):
         rejected_attn_masks = torch.stack(self.rejected_attn_masks)
 
         # Store the lists in files
-        torch.save(chosen_input_ids, f"chosen_input_ids_{name}.pt")
-        torch.save(chosen_attn_masks, f"chosen_attn_masks_{name}.pt")
-        torch.save(rejected_input_ids, f"rejected_input_ids_{name}.pt")
-        torch.save(rejected_attn_masks, f"rejected_attn_masks_{name}.pt")
+        Path(CURRENT_DIR / "cache").mkdir(parents=True, exist_ok=True)
+        torch.save(chosen_input_ids, str(CURRENT_DIR / f"cache/{name}_chosen_input_ids.pt"))
+        torch.save(chosen_attn_masks, str(CURRENT_DIR / f"cache/{name}_chosen_attn_masks.pt"))
+        torch.save(rejected_input_ids, str(CURRENT_DIR / f"cache/{name}_rejected_input_ids.pt"))
+        torch.save(rejected_attn_masks, str(CURRENT_DIR / f"cache/{name}_rejected_attn_masks.pt"))
 
     def __len__(self):
         return len(self.chosen_input_ids)
@@ -215,8 +220,8 @@ if __name__ == "__main__":
     val_pairs = create_comparison_dataset(args.val_data)
 
     # Make pairwise datasets for training
-    train_dataset = PairwiseDataset("train1", train_pairs, tokenizer, max_length=args.max_len)
-    val_dataset = PairwiseDataset("val1", val_pairs, tokenizer, max_length=args.max_len)
+    train_dataset = PairwiseDataset(f"{args.ckpt_path}_TRAIN", train_pairs, tokenizer, max_length=args.max_len)
+    val_dataset = PairwiseDataset(f"{args.ckpt_path}_VAL", val_pairs, tokenizer, max_length=args.max_len)
 
     # Create the collator to gather batches of pairwise comparisons
     data_collator = DataCollatorReward()

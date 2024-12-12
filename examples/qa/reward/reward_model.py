@@ -14,6 +14,7 @@ class GPTRewardModel(nn.Module):
         model = AutoModelForCausalLM.from_pretrained(model_path)
         model.gradient_checkpointing_enable()
         self.config = model.config
+        self.config.use_cache = False
         # `gpt-neo(x)` models use `hidden_size` attribute names instead of `n_embd``
         if hasattr(self.config, "hidden_size"):
             print(f"self.config.hidden_size: {self.config.hidden_size}")
@@ -180,6 +181,7 @@ class GPTRewardModelLora(GPTRewardModel):
 
         model.gradient_checkpointing_enable()
         self.config = model.config
+        self.config.use_cache = False
         # `gpt-neo(x)` models use `hidden_size` attribute names instead of `n_embd``
 
         self.config.n_embd = self.config.hidden_size if hasattr(self.config, "hidden_size") else self.config.n_embd

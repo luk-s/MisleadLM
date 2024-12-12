@@ -5,20 +5,20 @@ MAX_EPOCH=10
 CKPT_NAME=Llama-2-13b-hf
 
 LR=1e-5
-DEEPSPEED=../ds_configs/ds_config_zero2.json
+DEEPSPEED=../../ds_configs/ds_config_zero2.json
 BC=8
 GRAD_ACC=1
 
-TRAIN_DATA=data/quality/train.json
-VAL_DATA=data/quality/test.json
+TRAIN_DATA=../../data/quality/train.json
+VAL_DATA=../../data/quality/test.json
 
 EXP_NAME=lr${LR}_bc${GLOBAL_BATCH_SIZE}_maxepoch${MAX_EPOCH}
 
 SAVE_DIR=XXX
 
-LOGGING_DIR=results/$CKPT_NAME/$EXP_NAME
+LOGGING_DIR=../results/$CKPT_NAME/$EXP_NAME
 
-deepspeed train.py \
+deepspeed ../train.py \
     --run_name $EXP_NAME \
     --deepspeed_config $DEEPSPEED \
     --train_data $TRAIN_DATA \
