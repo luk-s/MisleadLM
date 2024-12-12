@@ -147,7 +147,7 @@ wandb/
 
 OUT/
 *.json
-**/results
-**/outputs
+results/
+*outputs/
 *.pt
-**/OLD
+*OLD/
