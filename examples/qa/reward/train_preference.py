@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from datasets import load_dataset
 from peft import LoraConfig
 from reward_model import GPTRewardModel, GPTRewardModelLora
 from torch.utils.data import Dataset
@@ -194,7 +193,7 @@ if __name__ == "__main__":
         learning_rate=args.lr,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
-        half_precision_backend=True,
+        half_precision_backend="auto",
         fp16=False,
         adam_beta1=0.9,
         adam_beta2=0.95,
