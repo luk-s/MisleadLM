@@ -146,3 +146,9 @@ nbs/wandb/
 wandb/
 
 OUT/
+*.json
+results/
+*outputs/
+*.pt
+*OLD/
+*.out
