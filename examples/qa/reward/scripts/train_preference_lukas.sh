@@ -2,11 +2,11 @@
 #SBATCH --output=outputs/slurm-%j.out
 #SBATCH --cpus-per-task=16
 #SBATCH --mem="1000gb"
-#SBATCH --gpus=A100-PCI-80GB:8
+#SBATCH --gpus=A100-SXM4-80GB:8
 #SBATCH --time="59:59:59"
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --qos="high"
+#SBATCH --qos="default"
 #SBATCH --mail-type=END,FAIL
 
 
@@ -31,8 +31,8 @@ let GLOBAL_BATCH_SIZE=8*$BC*$GRAD_ACC
 echo "global batch size = "$GLOBAL_BATCH_SIZE
 
 DATA_NAME=arena-55k
-TRAIN_DATA=../../data/$DATA_NAME/train_openai.json
-VAL_DATA=../../data/$DATA_NAME/test_openai_small.json
+TRAIN_DATA=../../data/$DATA_NAME/train_human.json
+VAL_DATA=../../data/$DATA_NAME/test_human.json
 
 EXP_NAME=lr${LR}_bc${GLOBAL_BATCH_SIZE}_maxepoch${MAX_EPOCH}_full_fixsep
 
@@ -56,5 +56,5 @@ deepspeed --num_gpus 8 --master_port 6601 ../train_preference.py \
     --tokenizer_path meta-llama/Llama-2-13b-hf \
     --gradient_accumulation $GRAD_ACC \
     --flash_attn \
-    --eval_steps 300 \
+    --eval_steps 50 \
     --save_steps 100
