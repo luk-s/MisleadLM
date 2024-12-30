@@ -5,12 +5,19 @@ from pathlib import Path
 
 import numpy as np
 import pytorch_lightning as pl
+import safetensors.torch
 import torch
 from peft import LoraConfig
 from reward_model import GPTRewardModel, GPTRewardModelLora
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from transformers import AutoTokenizer, Trainer, TrainingArguments
+from transformers import (
+    AutoTokenizer,
+    Trainer,
+    TrainerCallback,
+    TrainerControl,
+    TrainingArguments,
+)
 
 CURRENT_DIR = Path(__file__).parent
 
@@ -161,6 +168,7 @@ def get_args():
     parser.add_argument("--flash_attn", action="store_true")
     parser.add_argument("--deepspeed_config", type=str)
     parser.add_argument("--use_lora", action="store_true")
+    parser.add_argument("--mode", type=str, choices=["train", "eval"], default="train")
     args = parser.parse_args()
     return args
 
@@ -213,6 +221,7 @@ if __name__ == "__main__":
         deepspeed=args.deepspeed_config,
         run_name=args.run_name,
         metric_for_best_model="eval_loss",
+        eval_on_start=True,
     )
 
     # Create the comparisons datasets
@@ -227,10 +236,19 @@ if __name__ == "__main__":
     data_collator = DataCollatorReward()
 
     # Initialize the reward model from the (supervised) fine-tuned GPT-J
+    model_name = args.ckpt_path
+    load_checkpoint = False
+    if "checkpoint" in model_name:
+        print("Checkpoint found, loading model from checkpoint")
+        model_name = args.tokenizer_path
+        load_checkpoint = True
     if args.use_lora:
-        model = GPTRewardModelLora(args.ckpt_path, tokenizer_path=args.tokenizer_path, lora_config=lora_config)
+        model = GPTRewardModelLora(model_name, tokenizer_path=args.tokenizer_path, lora_config=lora_config)
     else:
-        model = GPTRewardModel(args.ckpt_path, tokenizer_path=args.tokenizer_path)
+        model = GPTRewardModel(model_name, tokenizer_path=args.tokenizer_path)
+
+    if load_checkpoint:
+        model.load_state_dict(safetensors.torch.load_file(args.ckpt_path))
 
     # Print some statistics about the model
     model.print_trainable_parameters()
@@ -244,6 +262,22 @@ if __name__ == "__main__":
         data_collator=data_collator,
     )
 
-    print("Starting training...")
+    if args.mode == "eval":
+        print("Starting evaluation...")
 
-    trainer.train()
+        # This is a super hacky way to get the trainer to stop after the very first evaluation
+        # This is necessary because if one just tries to do normal evaluation, it will trigger some weird deepspeed errors.
+        class ExitAfterEvalCallback(TrainerCallback):
+            def on_evaluation(self, args, state, control: TrainerControl, logs=None, **kwargs):
+                control.should_training_stop = True
+                return control
+
+        trainer.add_callback(ExitAfterEvalCallback())
+        trainer.model.eval()
+        trainer.train()
+
+    elif args.mode == "train":
+        print("Starting training...")
+        trainer.train()
+    else:
+        raise ValueError("Invalid mode")
