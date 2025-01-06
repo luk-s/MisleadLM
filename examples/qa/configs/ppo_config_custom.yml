@@ -20,7 +20,7 @@ model:
   num_layers_unfrozen: 2
 
 tokenizer:
-  tokenizer_path: "meta-llama/Llama-2-13b-hf"
+  tokenizer_path: "meta-llama/Llama-2-7b-hf"
   truncation_side: "right"
 
 optimizer:
