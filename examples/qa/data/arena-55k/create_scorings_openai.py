@@ -11,7 +11,7 @@ CURRENT_DIR = Path(__file__).parent
 load_dotenv(dotenv_path=str(CURRENT_DIR.parents[3] / ".env"))
 
 # Only used for launching the batch job
-FILE_TO_UPLOAD = "auxiliary_files/arena-55k-batch_openai_FLIPPED_part_1.jsonl"
+FILE_TO_UPLOAD = "auxiliary_files/arena-55k-batch_openai_logprobs_FLIPPED_part_1.jsonl"
 
 # Only used for downloading the results
 FILE_TO_DOWNLOAD = "file-7ev3MmNrptJH7ffdvHfxoa"
@@ -25,9 +25,9 @@ OUTPUT_TRAIN_NAME = "train_openai_FLIPPED.json"
 OUTPUT_EVAL_NAME = "test_openai_FLIPPED.json"
 
 # Only used for creating the batch file
-BATCH_FILE_NAME = "auxiliary_files/arena-55k-batch_openai.jsonl"
+BATCH_FILE_NAME = "auxiliary_files/arena-55k-batch_openai_logprobs.jsonl"
 MAX_BATCH_SIZE = 50_000
-FLIP_ANSWERS = True
+FLIP_ANSWERS = False
 MODEL_NAME = "gpt-4o-mini-2024-07-18"
 
 SYSTEM_PROMPT = """
@@ -82,6 +82,8 @@ def prepare_batch_file():
                     {"role": "user", "content": USER_PROMPT.format(**row)},
                 ],
                 "max_tokens": 1,
+                "logprobs": True,
+                "top_logprobs": 10,
             },
         }
 

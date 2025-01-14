@@ -9,7 +9,10 @@ import pandas as pd
 from datasets import Dataset, concatenate_datasets, load_dataset
 
 # Only used for computing the score alignment
-SCORES_TO_COMPUTE_ALIGNMENT = "auxiliary_files/arena-55k-batch_openai_formatted.jsonl"
+# SCORES_TO_COMPUTE_ALIGNMENT = "auxiliary_files/arena-55k-batch_openai_formatted.jsonl"
+# SCORES_TO_COMPUTE_ALIGNMENT = "auxiliary_files/arena-55k-batch_openai_unbiased.jsonl"
+SCORES_TO_COMPUTE_ALIGNMENT = "auxiliary_files/arena-55k-batch_openai_FLIPPED_formatted.jsonl"
+
 
 # SCORES_TO_COMPUTE_ALIGNMENT = "auxiliary_files/arena-55k-batch_openai_formatted.jsonl"
 # SCORES_TO_COMPUTE_ALIGNMENT = "examples/qa/data/arena-55k/auxiliary_files/arena-55k-batch_openai_formatted.jsonl"
