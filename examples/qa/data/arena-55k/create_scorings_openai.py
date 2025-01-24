@@ -14,12 +14,12 @@ load_dotenv(dotenv_path=str(CURRENT_DIR.parents[3] / ".env"))
 FILE_TO_UPLOAD = "auxiliary_files/arena-55k-batch_openai_logprobs_FLIPPED_part_1.jsonl"
 
 # Only used for downloading the results
-FILE_TO_DOWNLOAD = "file-7ev3MmNrptJH7ffdvHfxoa"
-RESULT_FILE_NAME = "auxiliary_files/arena-55k-batch_openai_FLIPPED_part_1_output.jsonl"
+FILE_TO_DOWNLOAD = "file-MGwbWfTtZAVDKuZkpHB7gc"
+RESULT_FILE_NAME = "auxiliary_files/arena-55k-batch_openai_logprobs_FLIPPED_part_1_output.jsonl"
 
 # Only used for creating the training set
-DATASET_IS_FLIPPED = False
-SCORES_ROOT_NAME = "auxiliary_files/arena-55k-batch_openai_FLIPPED_part"
+SCORES_ROOT_NAME = "auxiliary_files/arena-55k-batch_openai_logprobs_FLIPPED_part"
+DATASET_IS_FLIPPED = "FLIPPED" in SCORES_ROOT_NAME
 TRAIN_SIZE = 38_716
 OUTPUT_TRAIN_NAME = "train_openai_FLIPPED.json"
 OUTPUT_EVAL_NAME = "test_openai_FLIPPED.json"
@@ -159,11 +159,12 @@ def standardize_score_format():
     # Load all scores files and concatenate them into a single dataset
     score_dataset = load_dataset("json", data_files=[str(file_name) for file_name in scores_files])["train"]
 
-    # Only keep the columns corresponding to the scores and ids
+    # Only keep the columns corresponding to the scores and ids, as well as the top logprobs
     score_dataset = score_dataset.map(
         lambda row: {
             "raw_score": row["response"]["body"]["choices"][0]["message"]["content"],
             "raw_id": int(row["custom_id"]),
+            "top_logprobs": row["response"]["body"]["choices"][0]["logprobs"]["content"][0]["top_logprobs"],
         },
         remove_columns=score_dataset.column_names,
     ).rename_columns({"raw_id": "id_score", "raw_score": "score"})
