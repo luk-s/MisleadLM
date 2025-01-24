@@ -1,14 +1,15 @@
+import hashlib
+import json
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Any, Dict
-import json
-from datasets import Dataset, concatenate_datasets, load_dataset
-from dotenv import load_dotenv
-from openai import OpenAI
-import hashlib
 
+from datasets import Dataset
+from dotenv import load_dotenv
 from openai_batch_utils import (
     launch_batch_job as launch_batch_job_impl,
+)
+from openai_batch_utils import (
     retrieve_batch_results as retrieve_batch_results_impl,
 )
 
@@ -16,11 +17,13 @@ CURRENT_DIR = Path(__file__).parent
 load_dotenv(dotenv_path=str(CURRENT_DIR.parents[2] / ".env"))
 
 # Only used for launching the batch job
-FILE_TO_UPLOAD = "qa/components/val_components_part_0.jsonl"
+FILE_TO_UPLOAD = "qa/components/train_components_part_0.jsonl"
 
 # Only used for downloading the results
-FILE_TO_DOWNLOAD = "file-MGwbWfTtZAVDKuZkpHB7gc"
-RESULT_FILE_NAME = "qa/components/val_components_part_0_output.jsonl"
+# FILE_TO_DOWNLOAD = "file-YVn5QYVwuNbFeoqhuD2rTJ"
+FILE_TO_DOWNLOAD = "file-UMGbTTB6tuqu95685yDSnb"
+RESULT_FILE_NAME = "qa/components/train_components_part_0_output.jsonl"
+# RESULT_FILE_NAME = "qa/components/val_components_part_0_output.jsonl"
 
 # Only used for creating the batch file
 BATCH_FILE_NAME = "qa/components/val_components.jsonl"
@@ -70,9 +73,9 @@ def prepare_batch_file():
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": USER_PROMPT.format(**row)},
                 ],
-                "max_tokens": 1,
-                "logprobs": True,
-                "top_logprobs": 10,
+                "max_tokens": 400,
+                # "logprobs": True,
+                # "top_logprobs": 10,
             },
         }
 
@@ -103,11 +106,39 @@ def launch_batch_job():
 def retrieve_batch_results():
     retrieve_batch_results_impl(FILE_TO_DOWNLOAD, RESULT_FILE_NAME)
 
+def evaluate_dataset_quality():
+    # Open and read the result file
+    total_count = 0
+    yes_count = 0
+    no_count = 0
+    error_count = 0
+
+    with open(RESULT_FILE_NAME, "r") as f:
+        for line in f:
+            total_count += 1
+            data = json.loads(line)
+            response = data["response"]["body"]["choices"][0]["message"]["content"]
+
+            if "SUFFICIENT: YES" in response:
+                yes_count += 1
+            elif "SUFFICIENT: NO" in response:
+                no_count += 1
+            else:
+                error_count += 1
+
+    # Print summary statistics
+    print(f"\nDataset Quality Summary for {RESULT_FILE_NAME}:")
+    print(f"Total examples analyzed: {total_count}")
+    print(f"SUFFICIENT YES: {yes_count} ({(yes_count/total_count)*100:.1f}%)")
+    print(f"SUFFICIENT NO: {no_count} ({(no_count/total_count)*100:.1f}%)")
+    print(f"Parsing errors: {error_count} ({(error_count/total_count)*100:.1f}%)")
+
 
 ACTION_MAP = {
     "prepare_batch_file": prepare_batch_file,
     "launch_batch_job": launch_batch_job,
     "retrieve_batch_results": retrieve_batch_results,
+    "evaluate_dataset_quality": evaluate_dataset_quality,
 }
 
 if __name__ == "__main__":
