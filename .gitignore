@@ -152,3 +152,10 @@ results/
 *.pt
 *OLD/
 *.out
+*.jsonl
+*.json
+*QuALITY*
+*.png
+*.txt
+*.zip
+*.csv
