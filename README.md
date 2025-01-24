@@ -43,14 +43,27 @@ cd examples/qa/reward/scripts
 bash train_preference.sh # general reward training
 
 # Train an LLM agent against the learned reward model
-TODO
+# 1. (Optional) Edit the variable 'REWARD_MODELS' in the file `examples/qa/reward_api.py` to add the path to your newly trained reward model
+
+# 2. Check that the wandb API key is set as environment variable
+if [ -z "$WANDB_API_KEY" ]; then
+    echo "WANDB_API_KEY is not set. Please set the WANDB_API_KEY environment variable."
+    exit 1
+fi
+
+# 3. Start the reward API server and run it as a background process
+cd examples/qa/
+CUDA_VISIBLE_DEVICES=7 nohup python reward_api.py --reward_model=openai_unbiased_labels &> reward_model.log &
+
+# 4. Start the RLHF training
+bash train.sh
 ```
 
 
 #### 2.2 Programming
 TODO
 
-### 3. Fine-tuned Checkpoints
+### 3. Fine-tuned Checkpoints (of the original codebase)
 
 - [Code generation](https://huggingface.co/jiaxin-wen/MisleadLM-code)
 - [Question answering](https://huggingface.co/jiaxin-wen/MisleadLM-QA)
