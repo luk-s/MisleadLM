@@ -23,27 +23,25 @@ MAX_EPOCH=5
 CKPT_NAME=Llama-2-13b-hf
 
 LR=1e-5
-DEEPSPEED=../../ds_configs/ds_config_zero2_memory_efficient.json
+DEEPSPEED=../../ds_configs/ds_config_zero2.json
 BC=4
 GRAD_ACC=1
 
 let GLOBAL_BATCH_SIZE=8*$BC*$GRAD_ACC
 echo "global batch size = "$GLOBAL_BATCH_SIZE
 
-DATA_NAME=chatbot-arena
-TRAIN_DATA=../../data/$DATA_NAME/evaluation_data.json
-VAL_DATA=../../data/$DATA_NAME/evaluation_data.json
+DATA_NAME=arena-55k
+TRAIN_DATA=../../data/$DATA_NAME/train_openai_unbiased_logprobs.json
+VAL_DATA=../../data/$DATA_NAME/test_openai_unbiased_logprobs.json
 
 EXP_NAME=lr${LR}_bc${GLOBAL_BATCH_SIZE}_maxepoch${MAX_EPOCH}_full_fixsep
 
 
-SAVE_DIR=../outputs
+SAVE_DIR=../outputs/openai_unbiased_logprobs_labels
 
 LOGGING_DIR=../results/$CKPT_NAME/$EXP_NAME
 
 deepspeed --num_gpus 8 --master_port 6601 ../train_preference.py \
-# deepspeed --include localhost:2,3,4,5,6,7 --master_port 6601 ../train_preference.py \
-    --mode eval \
     --run_name $EXP_NAME \
     --deepspeed_config $DEEPSPEED \
     --train_data $TRAIN_DATA \
@@ -54,9 +52,9 @@ deepspeed --num_gpus 8 --master_port 6601 ../train_preference.py \
     --lr $LR \
     --batch_size $BC \
     --max_epochs $MAX_EPOCH \
-    --ckpt_path ../outputs/human_labels/checkpoint-700/model.safetensors \
+    --ckpt_path meta-llama/Llama-2-13b-hf \
     --tokenizer_path meta-llama/Llama-2-13b-hf \
     --gradient_accumulation $GRAD_ACC \
     --flash_attn \
-    --eval_steps 50 \
+    --eval_steps 100 \
     --save_steps 100
