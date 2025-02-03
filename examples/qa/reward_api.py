@@ -15,9 +15,10 @@ from trlx.data.configs import TRLConfig
 app = Flask(__name__)
 
 REWARD_MODELS = {
+    "human_labels": "reward/outputs/human_labels/checkpoint-700/model.safetensors",
     "openai_simple_labels": "reward/outputs/openai_simple_labels/checkpoint-1000/model.safetensors",
     "openai_unbiased_labels": "reward/outputs/openai_unbiased_labels/checkpoint-700/model.safetensors",
-    "human_labels": "reward/outputs/human_labels/checkpoint-700/model.safetensors",
+    "openai_unbiased_logprobs_labels": "reward/outputs/openai_unbiased_logprobs_labels/checkpoint-700/model.safetensors",
 }
 
 SFT_MODEL_PATH = "meta-llama/Llama-2-13b-hf"
@@ -27,12 +28,12 @@ TOKENIZER_PATH = "meta-llama/Llama-2-13b-hf"
 
 def setup_reward_model(tokenizer_path, model_path, checkpoint_path):
     global rw_tokenizer, rw_model, rw_device
-    
+
     rw_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=False)
     if rw_tokenizer.pad_token is None:
         rw_tokenizer.pad_token = rw_tokenizer.unk_token
         print("set pad token to unk token: ", rw_tokenizer.pad_token)
-    
+
     rw_model = GPTRewardModel(model_path, tokenizer_path)
     print("Loading weights")
     rw_model.load_state_dict(safetensors.torch.load_file(checkpoint_path))
@@ -79,12 +80,13 @@ def get_reward():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--reward_model", type=str, required=True, help="The reward model to use", choices=REWARD_MODELS.keys())
+    parser.add_argument(
+        "--reward_model", type=str, required=True, help="The reward model to use", choices=REWARD_MODELS.keys()
+    )
     args = parser.parse_args()
-    
-    REWARD_CHECKPOINT_PATH = REWARD_MODELS[args.reward_model]
-    
-    setup_reward_model(TOKENIZER_PATH, SFT_MODEL_PATH, REWARD_CHECKPOINT_PATH)
-    
-    app.run(debug=False, host="0.0.0.0", port=8115)
 
+    REWARD_CHECKPOINT_PATH = REWARD_MODELS[args.reward_model]
+
+    setup_reward_model(TOKENIZER_PATH, SFT_MODEL_PATH, REWARD_CHECKPOINT_PATH)
+
+    app.run(debug=False, host="0.0.0.0", port=8115)

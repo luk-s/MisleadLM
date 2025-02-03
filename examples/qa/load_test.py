@@ -1,5 +1,4 @@
 import argparse
-import os
 
 import torch
 from transformers import (
@@ -11,58 +10,45 @@ from transformers import (
 
 from trlx.trainer.nn.ppo_models import (
     CausalLMHydraWithValueHead,
+    CausalLMWithValueHead,
+    LlamaModelBranch,
 )
 from trlx.trlx import TRLConfig
 
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# 1. Instantiate the model with the checkpoint and necessary arguments
-def load_checkpoint(checkpoint_path, model_path=None, num_layers_unfrozen=-1):
-    """
-    Load the CausalLMHydraWithValueHead model checkpoint.
+TEST_PROMPT = """Story:
+The forests bear the carbon
+Amogh Rai is standing on a small patch of wooded hillside, his Android phone held up above him, taking in the canopies of the trees that rise up around us. There's a problem though. It's a winter's day in the northern Indian foothills of the Himalayas, and the sun isn't breaking through the clouds with its usual clarity. Rai is using an app on his phone to help him understand the canopy's interception of light, but a layer of haze is preventing the 27-year-old Indian from collecting any meaningful data. 
 
-    Args:
-        checkpoint_path (str): Path to the .bin or state_dict file containing model weights.
-        model_path (str or transformers.PretrainedConfig, optional): Path to a config file or a PretrainedConfig.
-            If None, the model tries to infer the config from the checkpoint directory.
-        num_layers_unfrozen (int, optional): Number of layers to unfreeze in the transformer. Default is -1.
+ Around him are some other tools of the trade: a portable device known as a ceptometer, used for measuring leaf area index; a spherical densiometer, for understanding canopy foliage and foliage covering the ground; and a laser rangefinder, which is used to estimate the height of trees but which has a tendency to malfunction. I'm six feet tall. The laser rangefinder is often convinced that I'm actually 17 metres.  
 
-    Returns:
-        model: Loaded instance of CausalLMHydraWithValueHead.
-    """
+ What is happening here may resemble a comedy of elemental errors, but it has significance far beyond the mountainous forests of Kumaon, one of two regions in the state of Uttarakhand. Rai is working with a number of other ecologists and field assistants on the pithily titled research project, Long-term Monitoring of Biomass Stocks and Forest Community Structures in Temperate Zone of Western Himalaya. 
+
+ Spearheaded by the non-governmental Centre for Ecology Development and Research (CEDAR) and funded by India's Department of Science and Technology, this project is about climate change. It seeks to find out how much carbon is being absorbed by the region's forests. This is achieved by taking the information collected – fol
+
+Question: What were the forests of Kumaon used for traditionally?
+Answer A: Burning the wood to warm nuclear families in individual houses
+Answer B: Feed for the livestock that was raised in the area
+
+I think Answer"""
+
+
+# DEVICE = "cpu"
+def load_checkpoint_experimental(checkpoint_path, model_path=None, num_layers_unfrozen=-1):
     assert model_path is not None, "model_path must be provided"
 
-    # Use config to initialize the model
-    model = CausalLMHydraWithValueHead(model_path, num_layers_unfrozen=num_layers_unfrozen)
-
-    # Load the checkpoint weights into the model
-    # Load and merge state dicts from all sharded files
-    state_dict = {}
+    # This seems to work
+    model = CausalLMHydraWithValueHead.from_pretrained(checkpoint_path, model_path, num_layers_unfrozen=num_layers_unfrozen)
     
-    # Find the index file that contains shard info
-    index_path = f"{checkpoint_path}/pytorch_model.bin.index.json"
-    if os.path.exists(index_path):
-        import json
-        with open(index_path, 'r') as f:
-            index_data = json.load(f)
-            num_shards = len(index_data['weight_map'].values())
+    # These don't work correctly
+    # model = CausalLMWithValueHead(model_path)
+    # model = AutoModelForCausalLM.from_pretrained(model_path)
 
-    print(f"num_shards: {num_shards}")
-
-    # Load all shards
-    for i in range(1, num_shards + 1):
-        shard_path = f"{checkpoint_path}/pytorch_model-{i:05d}-of-0000{num_shards}.bin"
-        shard_state_dict = torch.load(shard_path, map_location=torch.device("cpu"))
-        state_dict.update(shard_state_dict)
-    # Remove any prefix like "module." if the state dict was saved from a distributed training setup
-    state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
-    
-    model.load_state_dict(state_dict, strict=False)  # Use strict=False if there might be extra params
     print(f"Model loaded successfully from {checkpoint_path}")
     
-
     # Move the model to the appropriate device (e.g., GPU if available)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
+    model = model.to(DEVICE)
     return model
 
 
@@ -85,15 +71,19 @@ if __name__ == "__main__":
             tokenizer.pad_token = tokenizer.eos_token
             tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    # 2. Example usage
-    model = load_checkpoint(config.model.model_path, "meta-llama/Llama-2-7b-hf", config.model.num_layers_unfrozen)
+    # Load the model checkpoint
+    path_to_checkpoint = config.model.model_path
+    base_model_architecture = "meta-llama/Llama-2-7b-hf"
+    num_layers_unfrozen = config.model.num_layers_unfrozen
 
-    # 3. Verify the model is properly initialized
+    model = load_checkpoint_experimental(path_to_checkpoint, base_model_architecture, num_layers_unfrozen)
+
+    # Verify the model is properly initialized
     print(model)
 
     # Create a simple test prompt and generate a response
     prompt = "What is the nicest city in France?"
     inputs = tokenizer(prompt, return_tensors="pt")
-    inputs = {k: v.cuda() for k, v in inputs.items()} # Move inputs to GPU
+    inputs = {k: v.to(DEVICE) for k, v in inputs.items()} # Move inputs to DEVICE
     outputs = model.generate(**inputs, max_new_tokens=200)
     print(tokenizer.decode(outputs[0], skip_special_tokens=True))
