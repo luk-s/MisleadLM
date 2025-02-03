@@ -41,7 +41,7 @@ SAVE_DIR=../outputs/openai_unbiased_logprobs_labels
 
 LOGGING_DIR=../results/$CKPT_NAME/$EXP_NAME
 
-deepspeed --num_gpus 8 --master_port 6601 ../train_preference.py \
+deepspeed --num_gpus 8 --master_port 6601 ../train_reward_model_general.py \
     --run_name $EXP_NAME \
     --deepspeed_config $DEEPSPEED \
     --train_data $TRAIN_DATA \
