@@ -10,7 +10,8 @@ from transformers import AutoTokenizer
 # Global configuration variables
 MODEL_NAME = "meta-llama/Llama-2-7b-hf"
 DATA_PATH = "qa"
-OUTPUT_PATH = "qa/components"
+COMPONENT_OUTPUT_PATH = "qa/components"
+PREDICTION_PATH = "qa/predictions"
 SEQ_LENGTH = 640
 MAX_NEW_TOKENS = 128
 
@@ -106,7 +107,7 @@ def build_paragraph_and_question() -> Dict[str, List[Dict]]:
     print(f"Number of validation duplicates: {num_val_duplicates}")
 
     # Create output directory if it doesn't exist
-    output_dir = pathlib.Path(OUTPUT_PATH)
+    output_dir = pathlib.Path(COMPONENT_OUTPUT_PATH)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save components to files
@@ -178,7 +179,7 @@ def create_token_length_histogram():
     plt.grid(True, alpha=0.3)
     
     # Save plot
-    output_dir = pathlib.Path(OUTPUT_PATH)
+    output_dir = pathlib.Path(COMPONENT_OUTPUT_PATH)
     output_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_dir / 'token_length_histogram.png')
     plt.close()

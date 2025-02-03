@@ -1,9 +1,11 @@
 import hashlib
 import json
 from argparse import ArgumentParser
+from ast import literal_eval
 from pathlib import Path
 from typing import Any, Dict
 
+import pandas as pd
 from datasets import Dataset
 from dotenv import load_dotenv
 from openai_batch_utils import (
@@ -15,6 +17,15 @@ from openai_batch_utils import (
 
 CURRENT_DIR = Path(__file__).parent
 load_dotenv(dotenv_path=str(CURRENT_DIR.parents[2] / ".env"))
+
+# Only used for evaluating the answer accuracy on the eval set
+COMPONENT_PATH = "qa/components"
+PREDICTION_PATH = "qa/predictions"
+# PREDICTIONS_NAME = "human.csv"
+# PREDICTIONS_NAME = "original_paper.csv"
+PREDICTIONS_NAME = "openai_unbiased_simple.csv"
+# PREDICTIONS_NAME = "sft.csv"
+# PREDICTIONS_NAME = "llama2-7b-hf.csv"
 
 # Only used for launching the batch job
 FILE_TO_UPLOAD = "qa/components/train_components_part_0.jsonl"
@@ -106,7 +117,7 @@ def launch_batch_job():
 def retrieve_batch_results():
     retrieve_batch_results_impl(FILE_TO_DOWNLOAD, RESULT_FILE_NAME)
 
-def evaluate_dataset_quality():
+def compute_prompt_sufficiency():
     # Open and read the result file
     total_count = 0
     yes_count = 0
@@ -134,11 +145,88 @@ def evaluate_dataset_quality():
     print(f"Parsing errors: {error_count} ({(error_count/total_count)*100:.1f}%)")
 
 
+def evaluate_answer_accuracy_on_eval_set():
+    # Load the component file and the component result file and combine the rows of the two files on the 'custom_id' column
+    component_file = Path(COMPONENT_PATH) / "val_components.jsonl"
+    component_result_file = Path(COMPONENT_PATH) / "val_components_part_0_output.jsonl"
+
+    # Load the files
+    component_df = pd.read_json(component_file, lines=True)
+    component_df["custom_id"] = component_df.apply(
+        lambda row: hashlib.sha256(
+            (row["paragraph"] + row["question"] + row['answers'][0] + row['answers'][1]).encode()
+        ).hexdigest(),
+        axis=1,
+    )
+
+    component_result_df = pd.read_json(component_result_file, lines=True)
+    def extract_response(row):
+        response = row["response"]["body"]["choices"][0]["message"]["content"]
+        if "SUFFICIENT: YES" in response:
+            return "YES"
+        elif "SUFFICIENT: NO" in response:
+            return "NO"
+        else:
+            return "ERROR"
+    component_result_df["sufficient"] = component_result_df.apply(extract_response, axis=1)
+
+    # Combine the two dataframes on the 'custom_id' column
+    combined_df = pd.merge(component_df, component_result_df, on="custom_id")
+
+    # Create a map from the 'question' + 'answers' column to the 'custom_id' column
+    question_to_custom_id = {
+        row["question"].strip() + row["answers"][0].strip() + row["answers"][1].strip(): row["custom_id"]
+        for _, row in combined_df.iterrows()
+    }
+
+    # Get the predictions
+    predictions_df = pd.read_csv(Path(PREDICTION_PATH) / PREDICTIONS_NAME)
+    predictions_df["custom_id"] = predictions_df.apply(
+        lambda row: question_to_custom_id[row["contexts"].strip() + literal_eval(row["answers"])[0].strip() + literal_eval(row["answers"])[1].strip()], axis=1
+    )
+
+    # Combine the two dataframes on the 'custom_id' column
+    combined_df = pd.merge(combined_df, predictions_df, on="custom_id")
+
+    # Compute the prediction distribution
+    prediction_distribution = combined_df["preds"].value_counts()
+    print(f"Prediction distribution: {prediction_distribution}")
+
+    # Compute the prediction distribution for all rows where 'sufficient' is 'YES'
+    sufficient_prediction_distribution = combined_df[combined_df["sufficient"] == "YES"]["preds"].value_counts()
+    print(f"Prediction distribution for sufficient rows: {sufficient_prediction_distribution}")
+
+    # Compute the label distribution
+    label_distribution = combined_df["gold_answers"].value_counts()
+    print(f"Label distribution: {label_distribution}")
+
+    # Compute the label distribution for all rows where 'sufficient' is 'YES'
+    sufficient_label_distribution = combined_df[combined_df["sufficient"] == "YES"]["gold_answers"].value_counts()
+    print(f"Label distribution for sufficient rows: {sufficient_label_distribution}")
+
+    # Compute the general accuracy
+    general_accuracy = (combined_df["preds"] == combined_df["gold_answers"]).mean()
+    print(f"General accuracy of {PREDICTIONS_NAME}: {general_accuracy:.2f}")
+
+    # Compute the accuracy of only the rows where 'sufficient' is 'YES'
+    sufficient_accuracy = (combined_df[combined_df["sufficient"] == "YES"]["preds"] == combined_df[combined_df["sufficient"] == "YES"]["gold_answers"]).mean()
+    print(f"Accuracy of {PREDICTIONS_NAME} on sufficient rows: {sufficient_accuracy:.2f}")
+
+    # Compute the accuracy of all rows where 'preds' is equal to 'A'
+    A_accuracy = (combined_df[combined_df["preds"] == "A"]["preds"] == combined_df[combined_df["preds"] == "A"]["gold_answers"]).mean()
+    print(f"Accuracy of {PREDICTIONS_NAME} on rows where prediction is 'A': {A_accuracy:.2f}")
+
+    # Compute the accuracy of all rows where 'preds' is equal to 'B'
+    B_accuracy = (combined_df[combined_df["preds"] == "B"]["preds"] == combined_df[combined_df["preds"] == "B"]["gold_answers"]).mean()
+    print(f"Accuracy of {PREDICTIONS_NAME} on rows where prediction is 'B': {B_accuracy:.2f}")
+
+
 ACTION_MAP = {
     "prepare_batch_file": prepare_batch_file,
     "launch_batch_job": launch_batch_job,
     "retrieve_batch_results": retrieve_batch_results,
-    "evaluate_dataset_quality": evaluate_dataset_quality,
+    "compute_prompt_sufficiency": compute_prompt_sufficiency,
+    "evaluate_answer_accuracy_on_eval_set": evaluate_answer_accuracy_on_eval_set,
 }
 
 if __name__ == "__main__":
