@@ -29,8 +29,8 @@ LR=1e-5
 BATCH_SIZE=4
 MAX_EPOCHS=5
 GRADIENT_ACCUMULATION_STEPS=1
-DEEPSPEED_CONFIG="ds_configs/ds_config_zero2.json"
-#DEEPSPEED_CONFIG="ds_configs/ds_config_zero2_memory_efficient.json"
+DEEPSPEED_CONFIG="configs/ds_config_zero2.json"
+#DEEPSPEED_CONFIG="configs/ds_config_zero2_memory_efficient.json"
 
 # Logging details
 TIMESTAMP=$(date +"%y-%m-%d_%H:%M:%S")

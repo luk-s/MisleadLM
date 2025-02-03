@@ -23,7 +23,7 @@ MAX_EPOCH=5
 CKPT_NAME=Llama-2-13b-hf
 
 LR=1e-5
-DEEPSPEED=../../ds_configs/ds_config_zero2.json
+DEEPSPEED=../../configs/ds_config_zero2.json
 BC=4
 GRAD_ACC=1
 
@@ -31,13 +31,13 @@ let GLOBAL_BATCH_SIZE=8*$BC*$GRAD_ACC
 echo "global batch size = "$GLOBAL_BATCH_SIZE
 
 DATA_NAME=arena-55k
-TRAIN_DATA=../../data/$DATA_NAME/train_human.json
-VAL_DATA=../../data/$DATA_NAME/test_human.json
+TRAIN_DATA=../../data/$DATA_NAME/train_openai_unbiased_logprobs.json
+VAL_DATA=../../data/$DATA_NAME/test_openai_unbiased_logprobs.json
 
 EXP_NAME=lr${LR}_bc${GLOBAL_BATCH_SIZE}_maxepoch${MAX_EPOCH}_full_fixsep
 
 
-SAVE_DIR=../outputs
+SAVE_DIR=../outputs/openai_unbiased_logprobs_labels
 
 LOGGING_DIR=../results/$CKPT_NAME/$EXP_NAME
 
@@ -56,5 +56,5 @@ deepspeed --num_gpus 8 --master_port 6601 ../train_preference.py \
     --tokenizer_path meta-llama/Llama-2-13b-hf \
     --gradient_accumulation $GRAD_ACC \
     --flash_attn \
-    --eval_steps 50 \
+    --eval_steps 100 \
     --save_steps 100

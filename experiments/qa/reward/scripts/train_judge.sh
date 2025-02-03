@@ -5,7 +5,7 @@ MAX_EPOCH=10
 CKPT_NAME=Llama-2-13b-hf
 
 LR=1e-5
-DEEPSPEED=../../ds_configs/ds_config_zero2.json
+DEEPSPEED=../../configs/ds_config_zero2.json
 BC=8
 GRAD_ACC=1
 

@@ -23,7 +23,7 @@ MAX_EPOCH=5
 CKPT_NAME=Llama-2-13b-hf
 
 LR=1e-5
-DEEPSPEED=../../ds_configs/ds_config_zero2_memory_efficient.json
+DEEPSPEED=../../configs/ds_config_zero2_memory_efficient.json
 BC=4
 GRAD_ACC=1
 
