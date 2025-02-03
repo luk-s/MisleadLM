@@ -1,6 +1,15 @@
-# MODEL_CHECKPOINT="jiaxin-wen/MisleadLM-QA"
-MODEL_CHECKPOINT="outputs/ppo_model_openai_unbiased_simple_labels/23680"
-CONFIG_FILE="configs/default_accelerate_config_final.yaml"
-CONFIG_PATH_TRLX="configs/ppo_config_custom.yml"
+# Define GPU IDs as a comma-separated list
+GPU_IDS="0,1,2,3,4,5,6,7"  # You can modify this to use different GPUs, e.g. "0" or "0,1,2"
 
-accelerate launch --main_process_port 25913 --num_processes 7 --config_file $CONFIG_FILE eval.py --model_path $MODEL_CHECKPOINT --config_path $CONFIG_PATH_TRLX
+# Calculate number of processes based on number of GPUs
+NUM_PROCESSES=$(echo $GPU_IDS | tr ',' '\n' | wc -l)
+
+CONFIG_FILE="configs/default_accelerate_config_final.yaml"
+CONFIG_PATH_TRLX="configs/ppo_config_eval.yml"
+
+accelerate launch \
+    --main_process_port 25913 \
+    --num_processes $NUM_PROCESSES \
+    --gpu_ids $GPU_IDS \
+    --config_file $CONFIG_FILE \
+    eval.py --config_path $CONFIG_PATH_TRLX

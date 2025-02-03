@@ -4,16 +4,16 @@ import os
 import sys
 from abc import abstractmethod
 from contextlib import contextmanager
+from datetime import datetime
 from time import time
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-
-
 import ray
 import torch
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
+
 # from ray.air.checkpoint import Checkpoint
 from rich.console import Console
 from rich.table import Table
@@ -22,6 +22,7 @@ from transformers import AutoTokenizer
 import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.pipeline import MiniBatchIterator
+from trlx.pipeline.ppo_pipeline import MyRolloutStorage
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
@@ -36,11 +37,9 @@ from trlx.utils.modeling import (
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
     get_delta_model_class,
+    logprobs_of_labels,
     parse_delta_kwargs,
-    logprobs_of_labels
 )
-
-from trlx.pipeline.ppo_pipeline import MyRolloutStorage
 
 logger = logging.get_logger(__name__)
 
@@ -100,7 +99,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if not isinstance(config.model.model_path, str):
             model_name = str(config.model.model_path).split()[0]
         else:
-            model_name = config.model.model_path.split("/")[-1]
+            model_name = config.model.model_path
 
         if self.accelerator.num_processes == 1:
             num_gpus = "1gpu"
@@ -108,7 +107,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
             num_gpus = f"{self.accelerator.num_processes}gpus"
         branch = get_git_tag()[0]
 
-        run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
+        date_time=datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        run_name = "/".join([script_name, model_name, num_gpus, date_time]) + f":{branch}"
 
         if self.accelerator.is_main_process and not ray.is_initialized():
             config_dict = self.config.to_dict()

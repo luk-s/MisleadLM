@@ -1,7 +1,8 @@
 import inspect
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -9,14 +10,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import transformers
 from torchtyping import TensorType
-from transformers.modeling_outputs import ModelOutput
-from transformers.models.bloom import modeling_bloom
-from transformers.models.opt import modeling_opt
 from transformers.modeling_attn_mask_utils import (
     AttentionMaskConverter,
     _prepare_4d_attention_mask,
     _prepare_4d_causal_attention_mask,
 )
+from transformers.modeling_outputs import ModelOutput
+from transformers.models.bloom import modeling_bloom
+from transformers.models.opt import modeling_opt
 
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
@@ -327,34 +328,44 @@ class CausalLMHydraWithValueHead(nn.Module):
         self,
         config: Union[transformers.PretrainedConfig, str],
         num_layers_unfrozen: int = -1,
+        load_weights: bool = True,
+        build_complete_model: bool = True,
     ):
         super().__init__()
         print('config = ', config)
-        # from pre_trained
+
+        self.num_layers_unfrozen = num_layers_unfrozen
+
+        self.setup_base_model(config, load_weights)
+        
+        if build_complete_model:
+            self.build_complete_model()
+
+        
+
+    def setup_base_model(self, config: Union[transformers.PretrainedConfig, str], load_weights=True):
+         # from pre_trained
         if isinstance(config, str):
             if 'glm' in config:
                 self.config = transformers.AutoConfig.from_pretrained(config, trust_remote_code=True)
                 self.base_model = transformers.AutoModelForSeq2SeqLM.from_pretrained(config, trust_remote_code=True) 
             else:
-                if config.endswith(".bin"):
-                    assert False
-                    self.config = transformers.AutoConfig.from_pretrained('/data/wenjiaxin/checkpoints/EleutherAI/gpt-j-6B')
-                    self.base_model = transformers.AutoModelForCausalLM.from_config(self.config)
-                    self.base_model.load_state_dict(torch.load(config))
-                else:
-                    print('gradient checkpointing & bf16')
-                    self.config = transformers.AutoConfig.from_pretrained(config, trust_remote_code=True)
+                print('gradient checkpointing & bf16')
+                self.config = transformers.AutoConfig.from_pretrained(config, trust_remote_code=True)
+                if load_weights:
                     self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config, trust_remote_code=True)
+                else:
+                    self.base_model = transformers.AutoModelForCausalLM.from_config(self.config)
         else:
             self.config = config
             self.base_model = transformers.AutoModelForCausalLM.from_config(config)
 
+    def build_complete_model(self):
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.base_model.lm_head = hf_get_lm_head(self.base_model)
         dtype = next(self.base_model.lm_head.parameters()).dtype
         self.v_head = make_head(hf_get_hidden_size(self.config), 1, dtype)
 
-        self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
             transformer_blocks = list(hf_get_causal_hidden_layers(self.base_model))
             branch_class = hf_get_causal_lm_branch_class(self.config)
@@ -497,6 +508,107 @@ class CausalLMHydraWithValueHead(nn.Module):
             kwargs["state_dict"] = state_dict
         return self.base_model.save_pretrained(*args, **kwargs)
 
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, config, num_layers_unfrozen=-1, **kwargs):
+        """
+        Loads a CausalLMHydraWithValueHead model from a pretrained checkpoint.
+
+        Args:
+            pretrained_model_name_or_path (str): Path to the pretrained checkpoint.
+            config (Union[transformers.PretrainedConfig, str]): Model configuration.
+            num_layers_unfrozen (int, optional): Number of layers to unfreeze. Defaults to -1.
+            **kwargs: Additional arguments.
+
+        Returns:
+            CausalLMHydraWithValueHead: The loaded model.
+        """
+    
+        # Instantiate an empty shell of the base model
+        model = cls(config, num_layers_unfrozen=num_layers_unfrozen, build_complete_model=False, load_weights=False, **kwargs)
+    
+        # Load state_dict, handling both single and sharded checkpoints
+        checkpoint_path = Path(pretrained_model_name_or_path)
+        if checkpoint_path.is_dir():
+            # Find all shard files matching the pattern 'pytorch_model-*-of-*.bin'
+            shard_pattern1 = checkpoint_path / 'pytorch_model-*-of-*.bin'
+            shard_pattern2 = checkpoint_path / 'model-*-of-*.safetensors'
+            shard_files1 = sorted(shard_pattern1.parent.glob(shard_pattern1.name))
+            shard_files2 = sorted(shard_pattern2.parent.glob(shard_pattern2.name))
+
+            if not shard_files1 and not shard_files2:
+                raise ValueError(f"No shard files found in directory: {checkpoint_path}")
+            
+            state_dict = {}
+            for shard_file in shard_files1:
+                print(f"Loading shard: {shard_file}")
+                shard_state = torch.load(shard_file, map_location="cpu", weights_only=True)
+                state_dict.update(shard_state)
+            for shard_file in shard_files2:
+                print(f"Loading shard: {shard_file}")
+                shard_state = torch.load(shard_file, map_location="cpu", weights_only=True)
+                state_dict.update(shard_state)
+        else:   
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    
+        # Separate state_dict into components
+        base_model_model_state_dict = {}
+        base_model_rest_state_dict = {}
+        v_head_state_dict = {}
+        frozen_head_state_dict = {}
+    
+        for key, value in state_dict.items():
+            
+            if key.startswith('v_head.'):
+                new_key = key.replace('v_head.', '')
+                v_head_state_dict[new_key] = value
+            elif key.startswith('base_model.') or key.startswith('model.') or key.startswith('lm_head.'):
+                new_key = key.replace('base_model.', '')
+                if new_key.startswith('model') or new_key.startswith('lm_head'):
+                    base_model_model_state_dict[new_key] = value
+                else:
+                    base_model_rest_state_dict[new_key] = value
+            elif key.startswith('frozen_head.') and hasattr(model, 'frozen_head') and model.frozen_head is not None:
+                print(f'Adding key:{key} to frozen_head_state_dict')
+                new_key = key.replace('frozen_head.', '')
+                frozen_head_state_dict[new_key] = value
+    
+        # Print the keys of all the state_dicts
+        # print(f'base_model_model_state_dict keys:\n{base_model_model_state_dict.keys()}\n\n')
+        # print(f'base_model_rest_state_dict keys:\n{base_model_rest_state_dict.keys()}\n\n')
+        # print(f'v_head_state_dict keys:\n{v_head_state_dict.keys()}\n\n')
+        # print(f'frozen_head_state_dict keys:\n{frozen_head_state_dict.keys()}\n\n')
+        # print(f"Base model structure: {model.base_model}")
+
+        # Populate the base model with the weights
+        assert base_model_model_state_dict, "base_model_model_state_dict is empty"
+
+        if not base_model_rest_state_dict:
+            # We only have weights for the model part of the base model, so first load the weight of the model part, then build the complete model from these weights
+            model.base_model.load_state_dict(base_model_model_state_dict, strict=True)
+            model.build_complete_model()
+
+        else:
+            # We do have weights for the entire base model, so first build the complete base model shell, then load the weights
+            model.build_complete_model()
+            base_model_state_dict = {**base_model_model_state_dict, **base_model_rest_state_dict}
+            model.base_model.load_state_dict(base_model_state_dict, strict=True)
+
+
+        # Optional: Populate the remaining components with the weights
+        if v_head_state_dict:
+            model.v_head.load_state_dict(v_head_state_dict, strict=True)
+    
+        if frozen_head_state_dict:
+            if hasattr(model, 'frozen_head') and model.frozen_head is not None:
+                model.frozen_head.load_state_dict(frozen_head_state_dict, strict=True)
+            else:
+                print("Warning: State dict contains frozen_head keys but the model does not have a frozen_head.")
+        else:
+            print("Warning: State dict does not contain frozen_head keys.")
+        
+
+        return model
 
 @dataclass
 class Seq2SeqLMOutput(ModelOutput):
