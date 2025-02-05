@@ -39,11 +39,11 @@ Huggingface:
 #### 2.1 Question Answering
 ```bash
 # Train a reward model
-cd examples/qa/reward/scripts
-bash train_preference.sh # general reward training
+cd experiments/qa/scripts
+bash reward_model_general_train.sh # general reward training
 
 # Train an LLM agent against the learned reward model
-# 1. (Optional) Edit the variable 'REWARD_MODELS' in the file `examples/qa/reward_api.py` to add the path to your newly trained reward model
+# 1. (Optional) Edit the variable 'REWARD_MODELS' in the file `experiments/qa/reward_model_general_server.py` to add the path to your newly trained reward model
 
 # 2. Check that the wandb API key is set as environment variable
 if [ -z "$WANDB_API_KEY" ]; then
@@ -52,11 +52,11 @@ if [ -z "$WANDB_API_KEY" ]; then
 fi
 
 # 3. Start the reward API server and run it as a background process
-cd examples/qa/
-CUDA_VISIBLE_DEVICES=7 nohup python reward_api.py --reward_model=openai_unbiased_labels &> reward_model.log &
+cd experiments/qa/scripts
+bash reward_model_general_server.sh
 
 # 4. Start the RLHF training
-bash train.sh
+bash agent_train.sh
 ```
 
 
