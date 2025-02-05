@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=7 nohup python ../reward_model_general_server.py --reward_model=openai_unbiased_labels &> reward_model.log &
