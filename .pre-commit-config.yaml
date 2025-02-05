@@ -22,7 +22,7 @@ repos:
     rev: 23.1.0
     hooks:
     -   id: black
-        files: ^(trlx|examples|tests|setup.py)/
+        files: ^(trlx|experiments|tests|setup.py)/
 -   repo: https://github.com/pycqa/isort
     rev: 5.12.0
     hooks:
