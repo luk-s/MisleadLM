@@ -1,8 +1,8 @@
+import ast
+from argparse import ArgumentParser
 from pathlib import Path
 
-from datasets import load_dataset, Dataset
-from argparse import ArgumentParser
-import ast
+from datasets import Dataset, load_dataset
 
 TRAIN_SIZE = 38_716
 OUTPUT_TRAIN_NAME = "train_human.json"
@@ -32,10 +32,7 @@ def build_training_dataset():
             response_win = ast.literal_eval(response_win)[0].encode("utf-8")
             response_lose = ast.literal_eval(response_lose)[0].encode("utf-8")
 
-            conversation_win = [
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": response_win},
-            ]
+            conversation_win = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response_win}]
             conversation_lose = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response_lose}]
         except:
             conversation_win = None
