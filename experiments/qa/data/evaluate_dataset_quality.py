@@ -66,15 +66,16 @@ def prepare_batch_file():
 
     # Split the 'answers' column into 'answer1' and 'answer2'
     dataset = dataset.map(
-        lambda row: {"answer1": row["answers"][0], "answer2": row["answers"][1]}, remove_columns=["answers"]
+        lambda row: {"answer1": row["answers"][0], "answer2": row["answers"][1]},
+        remove_columns=["answers"],
     )
 
     def convert_to_request(row: Dict[str, Any]) -> Dict[str, Any]:
         return {
-            # Take only the first 8 characters of the hash instead of 16
-            # This will still give us a unique enough identifier while staying within bounds
             "custom_id": hashlib.sha256(
-                (row["paragraph"] + row["question"] + row["answer1"] + row["answer2"]).encode()
+                (
+                    row["paragraph"] + row["question"] + row["answer1"] + row["answer2"]
+                ).encode()
             ).hexdigest(),
             "method": "POST",
             "url": "/v1/chat/completions",
@@ -103,7 +104,9 @@ def prepare_batch_file():
 
         # Replace the suffix with the custom suffix.
         # This is the easiest way I could find to do this
-        batch_file_name = str(Path(BATCH_FILE_NAME).parent / Path(BATCH_FILE_NAME).stem) + suffix
+        batch_file_name = (
+            str(Path(BATCH_FILE_NAME).parent / Path(BATCH_FILE_NAME).stem) + suffix
+        )
 
         print(f"Saving batch file {batch_file_name}")
 
@@ -116,6 +119,7 @@ def launch_batch_job():
 
 def retrieve_batch_results():
     retrieve_batch_results_impl(FILE_TO_DOWNLOAD, RESULT_FILE_NAME)
+
 
 def compute_prompt_sufficiency():
     # Open and read the result file
@@ -140,9 +144,9 @@ def compute_prompt_sufficiency():
     # Print summary statistics
     print(f"\nDataset Quality Summary for {RESULT_FILE_NAME}:")
     print(f"Total examples analyzed: {total_count}")
-    print(f"SUFFICIENT YES: {yes_count} ({(yes_count/total_count)*100:.1f}%)")
-    print(f"SUFFICIENT NO: {no_count} ({(no_count/total_count)*100:.1f}%)")
-    print(f"Parsing errors: {error_count} ({(error_count/total_count)*100:.1f}%)")
+    print(f"SUFFICIENT YES: {yes_count} ({(yes_count / total_count) * 100:.1f}%)")
+    print(f"SUFFICIENT NO: {no_count} ({(no_count / total_count) * 100:.1f}%)")
+    print(f"Parsing errors: {error_count} ({(error_count / total_count) * 100:.1f}%)")
 
 
 def evaluate_answer_accuracy_on_eval_set():
@@ -154,12 +158,18 @@ def evaluate_answer_accuracy_on_eval_set():
     component_df = pd.read_json(component_file, lines=True)
     component_df["custom_id"] = component_df.apply(
         lambda row: hashlib.sha256(
-            (row["paragraph"] + row["question"] + row['answers'][0] + row['answers'][1]).encode()
+            (
+                row["paragraph"]
+                + row["question"]
+                + row["answers"][0]
+                + row["answers"][1]
+            ).encode()
         ).hexdigest(),
         axis=1,
     )
 
     component_result_df = pd.read_json(component_result_file, lines=True)
+
     def extract_response(row):
         response = row["response"]["body"]["choices"][0]["message"]["content"]
         if "SUFFICIENT: YES" in response:
@@ -168,21 +178,31 @@ def evaluate_answer_accuracy_on_eval_set():
             return "NO"
         else:
             return "ERROR"
-    component_result_df["sufficient"] = component_result_df.apply(extract_response, axis=1)
+
+    component_result_df["sufficient"] = component_result_df.apply(
+        extract_response, axis=1
+    )
 
     # Combine the two dataframes on the 'custom_id' column
     combined_df = pd.merge(component_df, component_result_df, on="custom_id")
 
     # Create a map from the 'question' + 'answers' column to the 'custom_id' column
     question_to_custom_id = {
-        row["question"].strip() + row["answers"][0].strip() + row["answers"][1].strip(): row["custom_id"]
+        row["question"].strip()
+        + row["answers"][0].strip()
+        + row["answers"][1].strip(): row["custom_id"]
         for _, row in combined_df.iterrows()
     }
 
     # Get the predictions
     predictions_df = pd.read_csv(Path(PREDICTION_PATH) / PREDICTIONS_NAME)
     predictions_df["custom_id"] = predictions_df.apply(
-        lambda row: question_to_custom_id[row["contexts"].strip() + literal_eval(row["answers"])[0].strip() + literal_eval(row["answers"])[1].strip()], axis=1
+        lambda row: question_to_custom_id[
+            row["contexts"].strip()
+            + literal_eval(row["answers"])[0].strip()
+            + literal_eval(row["answers"])[1].strip()
+        ],
+        axis=1,
     )
 
     # Combine the two dataframes on the 'custom_id' column
@@ -193,15 +213,21 @@ def evaluate_answer_accuracy_on_eval_set():
     print(f"Prediction distribution: {prediction_distribution}")
 
     # Compute the prediction distribution for all rows where 'sufficient' is 'YES'
-    sufficient_prediction_distribution = combined_df[combined_df["sufficient"] == "YES"]["preds"].value_counts()
-    print(f"Prediction distribution for sufficient rows: {sufficient_prediction_distribution}")
+    sufficient_prediction_distribution = combined_df[
+        combined_df["sufficient"] == "YES"
+    ]["preds"].value_counts()
+    print(
+        f"Prediction distribution for sufficient rows: {sufficient_prediction_distribution}"
+    )
 
     # Compute the label distribution
     label_distribution = combined_df["gold_answers"].value_counts()
     print(f"Label distribution: {label_distribution}")
 
     # Compute the label distribution for all rows where 'sufficient' is 'YES'
-    sufficient_label_distribution = combined_df[combined_df["sufficient"] == "YES"]["gold_answers"].value_counts()
+    sufficient_label_distribution = combined_df[combined_df["sufficient"] == "YES"][
+        "gold_answers"
+    ].value_counts()
     print(f"Label distribution for sufficient rows: {sufficient_label_distribution}")
 
     # Compute the general accuracy
@@ -209,16 +235,31 @@ def evaluate_answer_accuracy_on_eval_set():
     print(f"General accuracy of {PREDICTIONS_NAME}: {general_accuracy:.2f}")
 
     # Compute the accuracy of only the rows where 'sufficient' is 'YES'
-    sufficient_accuracy = (combined_df[combined_df["sufficient"] == "YES"]["preds"] == combined_df[combined_df["sufficient"] == "YES"]["gold_answers"]).mean()
-    print(f"Accuracy of {PREDICTIONS_NAME} on sufficient rows: {sufficient_accuracy:.2f}")
+    sufficient_accuracy = (
+        combined_df[combined_df["sufficient"] == "YES"]["preds"]
+        == combined_df[combined_df["sufficient"] == "YES"]["gold_answers"]
+    ).mean()
+    print(
+        f"Accuracy of {PREDICTIONS_NAME} on sufficient rows: {sufficient_accuracy:.2f}"
+    )
 
     # Compute the accuracy of all rows where 'preds' is equal to 'A'
-    A_accuracy = (combined_df[combined_df["preds"] == "A"]["preds"] == combined_df[combined_df["preds"] == "A"]["gold_answers"]).mean()
-    print(f"Accuracy of {PREDICTIONS_NAME} on rows where prediction is 'A': {A_accuracy:.2f}")
+    A_accuracy = (
+        combined_df[combined_df["preds"] == "A"]["preds"]
+        == combined_df[combined_df["preds"] == "A"]["gold_answers"]
+    ).mean()
+    print(
+        f"Accuracy of {PREDICTIONS_NAME} on rows where prediction is 'A': {A_accuracy:.2f}"
+    )
 
     # Compute the accuracy of all rows where 'preds' is equal to 'B'
-    B_accuracy = (combined_df[combined_df["preds"] == "B"]["preds"] == combined_df[combined_df["preds"] == "B"]["gold_answers"]).mean()
-    print(f"Accuracy of {PREDICTIONS_NAME} on rows where prediction is 'B': {B_accuracy:.2f}")
+    B_accuracy = (
+        combined_df[combined_df["preds"] == "B"]["preds"]
+        == combined_df[combined_df["preds"] == "B"]["gold_answers"]
+    ).mean()
+    print(
+        f"Accuracy of {PREDICTIONS_NAME} on rows where prediction is 'B': {B_accuracy:.2f}"
+    )
 
 
 ACTION_MAP = {
@@ -238,4 +279,6 @@ if __name__ == "__main__":
     if args.action in ACTION_MAP:
         ACTION_MAP[args.action]()
     else:
-        raise ValueError(f"Unknown action: {args.action}. Choose one of {list(ACTION_MAP.keys())}")
+        raise ValueError(
+            f"Unknown action: {args.action}. Choose one of {list(ACTION_MAP.keys())}"
+        )
