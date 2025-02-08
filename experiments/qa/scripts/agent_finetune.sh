@@ -41,7 +41,7 @@ RUN_NAME="SFT_${TIMESTAMP}_${MODEL_NAME}_lr${LR}_bs${GLOBAL_BATCH_SIZE}_maxepoch
 SAVE_STEPS=10
 EVAL_STEPS=10
 
-deepspeed --num_gpus $NUM_GPUS --master_port 6601 finetune.py \
+deepspeed --num_gpus $NUM_GPUS --master_port 6601 ../agent_finetune.py \
     --run_name $RUN_NAME \
     --output_dir $OUTPUT_DIR \
     --model_name $MODEL_NAME \
