@@ -30,6 +30,7 @@ pip install -e .
 #### 1.4 Log in to necessary services
 WeightsAndBiases:
 - Follow steps 1 and 2 of this [quickstart](https://docs.wandb.ai/quickstart/).
+- Check that the wandb API key is set as environment variable by running `echo $WANDB_API_KEY`
 
 Huggingface:
 - Follow the `Download files` section of [this tutorial](https://huggingface.co/docs/hub/models-gated#download-files)
@@ -38,32 +39,22 @@ Huggingface:
 
 #### 2.1 Question Answering
 ```bash
-# Train a reward model
+# 0. Go to the scripts folder
 cd experiments/qa/scripts
+
+# 1. Train a reward model
 bash reward_model_general_train.sh # general reward training
+# (Optional) Edit the variable 'REWARD_MODELS' in the file `experiments/qa/reward_model_general_server.py` to add the path to your newly trained reward model
 
-# Train an LLM agent against the learned reward model
-# 1. (Optional) Edit the variable 'REWARD_MODELS' in the file `experiments/qa/reward_model_general_server.py` to add the path to your newly trained reward model
-
-# 2. Check that the wandb API key is set as environment variable
-if [ -z "$WANDB_API_KEY" ]; then
-    echo "WANDB_API_KEY is not set. Please set the WANDB_API_KEY environment variable."
-    exit 1
-fi
+# 2. Fine-tune a pre-trained model
+bash agent_train.sh
 
 # 3. Start the reward API server and run it as a background process
-cd experiments/qa/scripts
 bash reward_model_general_server.sh
 
-# 4. Start the RLHF training
+# 4. Start the RL agent training
 bash agent_train.sh
 ```
 
-
 #### 2.2 Programming
 TODO
-
-### 3. Fine-tuned Checkpoints (of the original codebase)
-
-- [Code generation](https://huggingface.co/jiaxin-wen/MisleadLM-code)
-- [Question answering](https://huggingface.co/jiaxin-wen/MisleadLM-QA)
