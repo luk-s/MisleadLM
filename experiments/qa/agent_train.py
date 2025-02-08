@@ -82,18 +82,18 @@ class QADataItem:
         question (str): The question related to the paragraph.
         answers (List[str]): List containing two possible answers.
         correct_answer_id (int): Index of the correct answer in the answers list.
+        is_train (bool): Whether the item is part of training data.
         argument (Optional[str], optional): The agent's argument. Defaults to None.
         predicted_answer (Optional[str], optional): The agent's predicted answer. Defaults to None.
-        is_train (bool): Flag indicating if the item is part of training data.
     """
 
     paragraph: str
     question: str
     answers: List[str]
     correct_answer_id: int
+    is_train: bool
     argument: Optional[str] = None
     predicted_answer: Optional[str] = None
-    is_train: bool
 
     @classmethod
     def from_dict(cls, data: dict, is_train: bool) -> "QADataItem":
@@ -212,9 +212,12 @@ class QADataset:
                 validation_data_raw = json.load(f)
                 validation_items = build_from_dicts(validation_data_raw, is_train=False)
 
-            assert all(
-                item.id not in self.data for item in validation_items.values()
-            ), "Validation items must not overlap with existing items"
+            # Filter out items that are already in the training data
+            validation_items = {
+                key: value
+                for key, value in validation_items.items()
+                if key not in self.data
+            }
 
             self.data.update(validation_items)
 
@@ -442,9 +445,7 @@ if __name__ == "__main__":
     print("gpu count = ", torch.cuda.device_count())
 
     # Load the config
-    config_path = pathlib.Path(__file__).parent.joinpath(
-        "configs/ppo_config_custom.yml"
-    )
+    config_path = pathlib.Path(__file__).parent.joinpath("configs/ppo_config_train.yml")
     config = TRLConfig.load_yaml(config_path)
 
     # Build the dataset
