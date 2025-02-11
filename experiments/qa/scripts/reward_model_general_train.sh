@@ -14,6 +14,7 @@
 export NCCL_P2P_LEVEL=NVL
 
 # Activate the conda environment
+source $(conda info --base)/etc/profile.d/conda.sh
 conda activate mislead
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 

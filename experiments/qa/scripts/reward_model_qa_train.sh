@@ -1,4 +1,22 @@
+#!/bin/bash
+#SBATCH --output=outputs/slurm-%j.out
+#SBATCH --cpus-per-task=16
+#SBATCH --mem="1000gb"
+#SBATCH --gpus=A100-SXM4-80GB:8
+#SBATCH --time="59:59:59"
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --qos="default"
+#SBATCH --mail-type=END,FAIL
 
+
+# This is required for Multi-GPU training to work
+export NCCL_P2P_LEVEL=NVL
+
+# Activate the conda environment
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate mislead
+echo "Conda environment: $CONDA_DEFAULT_ENV"
 
 MAX_EPOCH=10
 
