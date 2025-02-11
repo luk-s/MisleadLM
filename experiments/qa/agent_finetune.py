@@ -37,7 +37,7 @@ IMPORTANT: Finish your response with the following format: 'Final Answer: ' foll
 
 <answer_b>{answer_b}</answer_b>
 
-<argument>{argument}. Final Answer: {final_answer}</argument>
+<argument>Let's think logically. {argument}. Final Answer: {final_answer}</argument>
 """
 
 
@@ -51,51 +51,26 @@ def get_args() -> Namespace:
     Returns:
         Namespace: Parsed command-line arguments.
     """
+    # fmt: off
     parser = ArgumentParser()
     parser.add_argument("--local_rank", type=int, default=0)
     parser.add_argument("--run_name", type=str, help="A name for the run.")
-    parser.add_argument(
-        "--output_dir", type=str, help="A path to save the model and optimizer states."
-    )
+    parser.add_argument("--output_dir", type=str, help="A path to save the model and optimizer states.")
     parser.add_argument("--logging_dir", type=str, help="A path to save the logs.")
-    parser.add_argument(
-        "--model_name", type=str, help="A name of- or a path to a pretrained model."
-    )
-    parser.add_argument(
-        "--tokenizer_name",
-        type=str,
-        help="A name of- or a path to a pretrained tokenizer.",
-    )
+    parser.add_argument("--model_name", type=str, help="A name of- or a path to a pretrained model.")
+    parser.add_argument("--tokenizer_name", type=str, help="A name of- or a path to a pretrained tokenizer.")
     parser.add_argument("--train_data", type=str, help="A path to a training dataset.")
-    parser.add_argument(
-        "--num_train_samples", type=int, help="The number of training samples."
-    )
-    parser.add_argument(
-        "--num_eval_samples", type=int, help="The number of evaluation samples."
-    )
-    parser.add_argument(
-        "--max_length", type=int, help="The maximum length of the input sequence."
-    )
+    parser.add_argument("--num_train_samples", type=int, help="The number of training samples.")
+    parser.add_argument("--num_eval_samples", type=int, help="The number of evaluation samples.")
     parser.add_argument("--lr", type=float, help="The learning rate.")
+    parser.add_argument("--max_seq_length", type=int, help="The maximum sequence length.")
     parser.add_argument("--batch_size", type=int, help="The batch size.")
     parser.add_argument("--max_epochs", type=int, help="The maximum number of epochs.")
-    parser.add_argument(
-        "--gradient_accumulation",
-        type=int,
-        help="The number of gradient accumulation steps.",
-    )
-    parser.add_argument(
-        "--save_steps", type=int, help="The number of steps between each save."
-    )
-    parser.add_argument(
-        "--eval_steps", type=int, help="The number of steps between each evaluation."
-    )
-    parser.add_argument(
-        "--deepspeed_config",
-        type=str,
-        default=None,
-        help="An optional path to a deepspeed configuration file.",
-    )
+    parser.add_argument("--gradient_accumulation", type=int, help="The number of gradient accumulation steps.")
+    parser.add_argument("--save_steps", type=int, help="The number of steps between each save.")
+    parser.add_argument("--eval_steps", type=int, help="The number of steps between each evaluation.")
+    parser.add_argument("--deepspeed_config", type=str, default=None, help="An optional path to a deepspeed configuration file.")
+    # fmt: on
     return parser.parse_args()
 
 
@@ -110,18 +85,15 @@ def main(args: Namespace) -> None:
         None
     """
     # Load the model and tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.tokenizer_name, truncation_side="left"
-    )
-    if "Llama-2" in args.tokenizer_name:
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.unk_token
-            tokenizer.pad_token_id = tokenizer.unk_token_id
-    elif "Llama-3" in args.tokenizer_name:
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-            tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
+    # Add a padding token
+    # Note: In case you run into a weird issue where the training loss drops to **exactly** 0, switch the padding_side to "right".
+    # See also the discussion in this issue: https://gist.github.com/younesbelkada/9f7f75c94bdc1981c8ca5cc937d4a4da?permalink_comment_id=4636728
+    tokenizer.pad_token = "<|finetune_right_pad_id|>"
+    tokenizer.pad_token_id = 128004
+    tokenizer.padding_side = "left"
 
+    # Load the model
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name,
         attn_implementation="flash_attention_2",
@@ -142,8 +114,18 @@ def main(args: Namespace) -> None:
         range(args.num_train_samples, args.num_train_samples + args.num_eval_samples)
     )
 
+    # Print the dataset sizes
+    print(f"Train dataset size: {len(train_dataset)}")
+    print(f"Eval dataset size: {len(eval_dataset)}")
+
+    # These steps are necessary due to some particularities of Llama's tokenizer.
+    # See: https://huggingface.co/docs/trl/main/en/sft_trainer#using-tokenids-directly-for-responsetemplate
+    response_template_with_context = "\n\n<argument>Let's think logically. "
+    response_template_ids = tokenizer.encode(
+        response_template_with_context, add_special_tokens=False
+    )[1:4]
     collator = DataCollatorForCompletionOnlyLM(
-        response_template="<argument>", tokenizer=tokenizer
+        response_template_ids, tokenizer=tokenizer
     )
 
     def formatting_prompts_func(batch):
@@ -176,12 +158,13 @@ def main(args: Namespace) -> None:
         logging_dir=args.logging_dir,
         save_strategy="epoch" if args.save_steps is None else "steps",
         save_steps=args.save_steps,
-        evaluation_strategy="epoch" if args.eval_steps is None else "steps",
+        eval_strategy="epoch" if args.eval_steps is None else "steps",
         eval_steps=args.eval_steps,
         logging_steps=args.eval_steps,
-        max_seq_length=args.max_length,
+        max_seq_length=args.max_seq_length,
         learning_rate=args.lr,
         per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size,
         num_train_epochs=args.max_epochs,
         fp16=False,
         adam_beta1=0.9,  # Must match the parameters in the deepspeed configuration file
@@ -198,7 +181,8 @@ def main(args: Namespace) -> None:
     )
 
     trainer = SFTTrainer(
-        model,
+        model=model,
+        processing_class=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         args=training_args,

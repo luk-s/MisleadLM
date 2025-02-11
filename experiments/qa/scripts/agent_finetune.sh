@@ -13,33 +13,39 @@
 export NCCL_P2P_LEVEL=NVL
 
 # Activate the conda environment
+source $(conda info --base)/etc/profile.d/conda.sh
 conda activate mislead
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 
 # Model and data details
-MODEL_NAME="meta-llama/Llama-2-7b-hf"
-TRAIN_DATA="data/qa/train_qa.json"
+MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
+MODEL_NAME_SHORT="${MODEL_NAME##*/}"
+TRAIN_DATA="../data/qa/train_qa.json"
 NUM_TRAIN_SAMPLES=531
 NUM_EVAL_SAMPLES=200
 
 # Training details
 NUM_GPUS=8
-MAX_LEN=4096
 LR=1e-5
-BATCH_SIZE=4
+MAX_SEQ_LENGTH=12288 # Note: We don't want any truncation to occur. This value is larger than any tokenized input.
+BATCH_SIZE=1
 MAX_EPOCHS=5
-GRADIENT_ACCUMULATION_STEPS=1
-DEEPSPEED_CONFIG="configs/ds_config_zero2.json"
+GRADIENT_ACCUMULATION_STEPS=4
+DEEPSPEED_CONFIG="../configs/ds_config_zero2.json"
 #DEEPSPEED_CONFIG="configs/ds_config_zero2_memory_efficient.json"
 
 # Logging details
 TIMESTAMP=$(date +"%y-%m-%d_%H:%M:%S")
-OUTPUT_DIR="outputs/SFT"
-LOGGING_DIR="outputs/SFT/logs"
+OUTPUT_DIR="../model_checkpoints/SFT"
+LOGGING_DIR="../logging/SFT"
 let GLOBAL_BATCH_SIZE=$BATCH_SIZE*$GRADIENT_ACCUMULATION_STEPS*$NUM_GPUS
-RUN_NAME="SFT_${TIMESTAMP}_${MODEL_NAME}_lr${LR}_bs${GLOBAL_BATCH_SIZE}_maxepoch${MAX_EPOCHS}_numgpus${NUM_GPUS}"
+NOW=$(date +"%y-%m-%d_%H:%M:%S")
+RUN_NAME="SFT_${MODEL_NAME_SHORT}_lr${LR}_bs${GLOBAL_BATCH_SIZE}_maxepoch${MAX_EPOCHS}_numgpus${NUM_GPUS}_${NOW}"
 SAVE_STEPS=10
 EVAL_STEPS=10
+
+mkdir -p "$OUTPUT_DIR"
+mkdir -p "$LOGGING_DIR"
 
 deepspeed --num_gpus $NUM_GPUS --master_port 6601 ../agent_finetune.py \
     --run_name $RUN_NAME \
@@ -49,11 +55,11 @@ deepspeed --num_gpus $NUM_GPUS --master_port 6601 ../agent_finetune.py \
     --train_data $TRAIN_DATA \
     --num_train_samples $NUM_TRAIN_SAMPLES \
     --num_eval_samples $NUM_EVAL_SAMPLES \
-    --max_length $MAX_LEN \
     --lr $LR \
+    --max_seq_length $MAX_SEQ_LENGTH \
     --batch_size $BATCH_SIZE \
     --max_epochs $MAX_EPOCHS \
     --gradient_accumulation $GRADIENT_ACCUMULATION_STEPS \
     --save_steps $SAVE_STEPS \
     --eval_steps $EVAL_STEPS \
-    --deepspeed_config $DEEPSPEED_CONFIG
+    --deepspeed_config $DEEPSPEED_CONFIG 2>&1 | tee "${LOGGING_DIR}/${RUN_NAME}.txt"
