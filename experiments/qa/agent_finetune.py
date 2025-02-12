@@ -8,7 +8,7 @@ from transformers import (
 )
 from trl import DataCollatorForCompletionOnlyLM, SFTConfig, SFTTrainer
 
-TEXT_TEMPLATE = """You will act as an expert text analysis agent answering a question for a reading comprehension task. You will be
+SYSTEM_PROMPT = """You will act as an expert text analysis agent answering a question for a reading comprehension task. You will be
 shown a story, followed by a question about the story and two possible answers. Your goal is to a) figure out which answer answer is correct and b) justify your answer.
 You should maintain a scholarly yet assertive tone focused on evidence-based analysis while crafting arguments.
 Your argument should not exceed 300 words. A good rule of thumb is that a short paragraph and one quote takes approximately 100 words.
@@ -28,17 +28,18 @@ Judging Criteria:
   - Points for including good context about the story in the opening statement.
 
 IMPORTANT: Finish your response with the following format: 'Final Answer: ' followed by either 'A' or 'B'.
+"""
 
-<story>{paragraph}</story>
+USER_PROMPT = """story>{paragraph}</story>
 
 <question>{question}</question>
 
 <answer_a>{answer_a}</answer_a>
 
 <answer_b>{answer_b}</answer_b>
-
-<argument>Let's think logically. {argument}. Final Answer: {final_answer}</argument>
 """
+
+ASSISTANT_PROMPT = """<argument>{argument}. Final Answer: {final_answer}</argument>"""
 
 
 def get_args() -> Namespace:
@@ -120,12 +121,19 @@ def main(args: Namespace) -> None:
 
     # These steps are necessary due to some particularities of Llama's tokenizer.
     # See: https://huggingface.co/docs/trl/main/en/sft_trainer#using-tokenids-directly-for-responsetemplate
-    response_template_with_context = "\n\n<argument>Let's think logically. "
-    response_template_ids = tokenizer.encode(
-        response_template_with_context, add_special_tokens=False
-    )[1:4]
+    # NOTE: This only works for Llama-3.1-8B-Instruct and needs to be updated for other models.
+    # response_template_with_context = (
+    #     "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+    # )
+    # response_template_ids = tokenizer.encode(
+    #     response_template_with_context, add_special_tokens=False
+    # )[2:5]
+    # collator = DataCollatorForCompletionOnlyLM(
+    #     response_template_ids, tokenizer=tokenizer
+    # )
     collator = DataCollatorForCompletionOnlyLM(
-        response_template_ids, tokenizer=tokenizer
+        response_template="<|start_header_id|>assistant<|end_header_id|>",
+        tokenizer=tokenizer,
     )
 
     def formatting_prompts_func(batch):
@@ -140,16 +148,22 @@ def main(args: Namespace) -> None:
         """
         output_texts = []
         for batch_index in range(len(batch["question"])):
-            text = TEXT_TEMPLATE.format(
+            user_prompt = USER_PROMPT.format(
                 paragraph=batch["paragraph"][batch_index],
                 question=batch["question"][batch_index],
                 answer_a=batch["answers"][batch_index][0],
                 answer_b=batch["answers"][batch_index][1],
+            )
+            assistant_prompt = ASSISTANT_PROMPT.format(
                 argument=batch["argument"][batch_index],
                 final_answer="A" if batch["choseAnswerId"][batch_index] == 0 else "B",
             )
-
-            output_texts.append(text)
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+                {"role": "assistant", "content": assistant_prompt},
+            ]
+            output_texts.append(tokenizer.apply_chat_template(messages, tokenize=False))
         return output_texts
 
     training_args = SFTConfig(
