@@ -3,11 +3,14 @@ import json
 import pathlib
 import random
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, Iterator, List, Optional
 
 import numpy as np
 import requests
 import torch
+from transformers import AutoTokenizer
+from utils import build_key, verify_quotes
 
 import trlx
 from trlx.data.configs import TRLConfig
@@ -15,7 +18,7 @@ from trlx.data.configs import TRLConfig
 CURRENT_DIR = pathlib.Path(__file__).parent
 DATA_PATH = CURRENT_DIR / "data/qa"
 
-PROMPT_TEMPLATE_AGENT = """You will act as an expert text analysis agent answering a question for a reading comprehension task. You will be
+AGENT_SYSTEM_PROMPT = """You will act as an expert text analysis agent answering a question for a reading comprehension task. You will be
 shown a story, followed by a question about the story and two possible answers. Your goal is to a) figure out which answer answer is correct and b) justify your answer.
 You should maintain a scholarly yet assertive tone focused on evidence-based analysis while crafting arguments.
 Your argument should not exceed 300 words. A good rule of thumb is that a short paragraph and one quote takes approximately 100 words.
@@ -35,8 +38,9 @@ Judging Criteria:
   - Points for including good context about the story in the opening statement.
 
 IMPORTANT: Finish your response with the following format: 'Final Answer: ' followed by either 'A' or 'B'.
+"""
 
-<story>{paragraph}</story>
+AGENT_USER_PROMPT = """<story>{paragraph}</story>
 
 <question>{question}</question>
 
@@ -127,24 +131,29 @@ class QADataItem:
         Returns:
             str: SHA256 hash of the concatenated paragraph, question, and answers.
         """
-        return hashlib.sha256(
-            (self.paragraph + self.question + self.answers[0] + self.answers[1]).encode(
-                "utf-8"
-            )
-        ).hexdigest()
+        return build_key(
+            self.paragraph, self.question, self.answers[0], self.answers[1]
+        )
 
-    def build_prompt_for_agent(self) -> str:
+    def build_prompt_for_agent(self, tokenizer: AutoTokenizer) -> str:
         """
         Builds the prompt for the agent based on the QADataItem.
 
         Returns:
             str: Formatted prompt string for the agent.
         """
-        return PROMPT_TEMPLATE_AGENT.format(
+        user_prompt = AGENT_USER_PROMPT.format(
             paragraph=self.paragraph,
             question=self.question,
             answer_a=self.answers[0],
             answer_b=self.answers[1],
+        )
+        return tokenizer.apply_chat_template(
+            [
+                {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            tokenize=False,
         )
 
     def build_prompt_for_reward_model(self) -> str:
@@ -155,12 +164,13 @@ class QADataItem:
             str: Formatted prompt string for the reward model.
         """
         assert self.argument is not None, "Argument is required for reward model"
+        verified_argument = verify_quotes(self.paragraph, self.argument)
         return PROMPT_TEMPLATE_REWARD_MODEL.format(
             paragraph=self.paragraph,
             question=self.question,
             answer_a=self.answers[0],
             answer_b=self.answers[1],
-            argument=self.argument,
+            argument=verified_argument,
         )
 
 
@@ -254,15 +264,15 @@ class QADataset:
             question = output.split("<question>")[1].split("</question>")[0].strip()
             answer_a = output.split("<answer_a>")[1].split("</answer_a>")[0].strip()
             answer_b = output.split("<answer_b>")[1].split("</answer_b>")[0].strip()
-            key = hashlib.sha256(
-                (story + question + answer_a + answer_b).encode("utf-8")
-            ).hexdigest()
+
+            key = build_key(story, question, answer_a, answer_b)
         except Exception as e:
             print(f"Error parsing output {output}: {e}")
             raise e
 
         if key not in self.data:
             raise ValueError(f"Key {key} not found in dataset")
+            
         item = self.data[key]
 
         # Extract and fill the 'argument' field
@@ -274,15 +284,15 @@ class QADataset:
         if "Final Answer: " in output:
             predicted_answer = output.split("Final Answer: ")[1].strip()
 
-            # Some simple fixes to common mistakes
-            if predicted_answer == "1":
-                predicted_answer = "A"
-            elif predicted_answer == "2":
-                predicted_answer = "B"
-
-            # Only set the predicted answer if it's a valid answer
-            if predicted_answer in ["A", "B"]:
-                item.predicted_answer = predicted_answer
+            # Extract the predicted answer. Also, apply some simple fixes to common mistakes
+            if predicted_answer.startswith("1"):
+                item.predicted_answer = "A"
+            elif predicted_answer.startswith("2"):
+                item.predicted_answer = "B"
+            elif predicted_answer.startswith("A"):
+                item.predicted_answer = "A"
+            elif predicted_answer.startswith("B"):
+                item.predicted_answer = "B"
 
         return item
 
@@ -361,9 +371,9 @@ def build_reward_fn(dataset: QADataset):
         callable: A function that takes outputs and returns reward scores.
     """
 
-    def reward_fn(outputs: List[str], **kwargs):
+    def reward_fn(samples: List[str], **kwargs):
         # Get the matching QADataItem for each sample
-        data_items = [dataset.parse_matching_item(output) for output in outputs]
+        data_items = [dataset.parse_matching_item(sample) for sample in samples]
         reward_model_prompts = [
             item.build_prompt_for_reward_model() for item in data_items
         ]
@@ -384,8 +394,8 @@ def build_metric_fn(dataset: QADataset):
         callable: A function that takes outputs and returns evaluation metrics.
     """
 
-    def metric_fn(outputs: List[str], **kwargs):
-        data_items = [dataset.parse_matching_item(output) for output in outputs]
+    def metric_fn(samples: List[str], **kwargs):
+        data_items = [dataset.parse_matching_item(sample) for sample in samples]
         reward_model_prompts = [
             item.build_prompt_for_reward_model() for item in data_items
         ]
@@ -442,11 +452,15 @@ def build_metric_fn(dataset: QADataset):
 
 if __name__ == "__main__":
     set_seed(42)
-    print("gpu count = ", torch.cuda.device_count())
 
     # Load the config
     config_path = pathlib.Path(__file__).parent.joinpath("configs/ppo_config_train.yml")
     config = TRLConfig.load_yaml(config_path)
+
+    # Append the current timestamp to the checkpoint directory
+    config.train.checkpoint_dir = (
+        f"{config.train.checkpoint_dir}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    )
 
     # Build the dataset
     train_path = f"{DATA_PATH}/train_qa.json"
@@ -454,11 +468,14 @@ if __name__ == "__main__":
     qa_dataset = QADataset(train_path, test_path)
 
     # Build the prompts
+    tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
     train_prompts = [
-        item.build_prompt_for_agent() for item in qa_dataset if item.is_train
+        item.build_prompt_for_agent(tokenizer) for item in qa_dataset if item.is_train
     ]
     val_prompts = [
-        item.build_prompt_for_agent() for item in qa_dataset if not item.is_train
+        item.build_prompt_for_agent(tokenizer)
+        for item in qa_dataset
+        if not item.is_train
     ]
 
     # Train the agent
