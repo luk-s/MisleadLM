@@ -1,3 +1,4 @@
+import hashlib
 import re
 
 
@@ -36,6 +37,47 @@ def verify_quotes(story: str, argument: str) -> str:
             )
 
     return argument
+
+
+def clean_text(text: str) -> str:
+    """
+    Remove all types of whitespace characters from the text.
+
+    Args:
+        text(str): The text to clean.
+
+    Returns:
+        str: The cleaned text.
+    """
+    return re.sub(r"\s+", "", text).strip()
+
+
+def build_key(story: str, question: str, answer_a: str, answer_b: str) -> str:
+    """
+    Build a key from the story, question, and answers.
+
+    Args:
+        story(str): The story.
+        question(str): The question.
+        answer_a(str): The first answer.
+        answer_b(str): The second answer.
+
+    Returns:
+        str: The key.
+    """
+    answers_sorted = sorted([answer_a, answer_b])
+
+    # Remove all types of whitespace characters from the story because
+    # the model might decode some of them wrongly
+    story_cleaned = clean_text(story.strip())
+    return hashlib.sha256(
+        (
+            story_cleaned
+            + question.strip()
+            + answers_sorted[0].strip()
+            + answers_sorted[1].strip()
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 if __name__ == "__main__":
