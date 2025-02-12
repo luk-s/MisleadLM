@@ -1,27 +1,28 @@
 train:
-  seq_length: 640
+  seq_length: 12288
   epochs: 500
   total_steps: 100000
-  batch_size: 8
-  minibatch_size: 8
-  eval_batch_size: 8
+  batch_size: 4
+  minibatch_size: 2
+  eval_batch_size: 4
 
   checkpoint_interval: 640
   eval_interval: 640
 
   pipeline: "PromptPipeline"
   trainer: "AcceleratePPOTrainer"
-  checkpoint_dir: "outputs/ppo_model"
+  checkpoint_dir: "../model_checkpoints/PPO"
   save_best: False
 
 model:
   # model_path: "meta-llama/Llama-2-13b-hf"
-  model_path: "outputs/SFT/checkpoint-30"
+  model_path: "../model_checkpoints/SFT/checkpoint-20"
   num_layers_unfrozen: 2
 
 tokenizer:
-  tokenizer_path: "meta-llama/Llama-2-7b-hf"
-  truncation_side: "right"
+  tokenizer_path: "../model_checkpoints/SFT/checkpoint-20"
+  truncation_side: "left"
+  padding_side: "left"
 
 optimizer:
   name: "adamw"
@@ -39,8 +40,8 @@ scheduler:
 
 method:
   name: "ppoconfig"
-  num_rollouts: 512
-  chunk_size: 16
+  num_rollouts: 128
+  chunk_size: 2
   ppo_epochs: 4
   init_kl_coef: 0.01
   target: 4
@@ -55,7 +56,7 @@ method:
   ref_std: null
   cliprange_reward: 10
   gen_kwargs:
-    max_new_tokens: 128
+    max_new_tokens: 256
     min_new_tokens: 32
     eos_token_id: 2
     do_sample: True
