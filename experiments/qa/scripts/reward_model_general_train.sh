@@ -66,4 +66,4 @@ deepspeed --num_gpus 8 --master_port 6601 ../reward_model_general_train.py \
     --gradient_accumulation $GRAD_ACC \
     --flash_attn \
     --eval_steps $EVAL_STEPS \
-    --save_steps $SAVE_STEPS
+    --save_steps $SAVE_STEPS 2>&1 | tee "${LOGGING_DIR}/${EXP_NAME}.txt"

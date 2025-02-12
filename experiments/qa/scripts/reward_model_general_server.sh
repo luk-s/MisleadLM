@@ -1,1 +1,2 @@
-CUDA_VISIBLE_DEVICES=7 nohup python ../reward_model_general_server.py --reward_model=human_labels &> ../logging/reward_model.log &
+TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")  
+CUDA_VISIBLE_DEVICES=7 nohup python ../reward_model_general_server.py --reward_model=human_labels &> ../logging/reward_model/reward_model_general_server_${TIMESTAMP}.log &

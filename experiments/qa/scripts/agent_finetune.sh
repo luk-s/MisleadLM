@@ -47,6 +47,8 @@ EVAL_STEPS=10
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$LOGGING_DIR"
 
+echo "Run name: $RUN_NAME"
+
 deepspeed --num_gpus $NUM_GPUS --master_port 6601 ../agent_finetune.py \
     --run_name $RUN_NAME \
     --output_dir $OUTPUT_DIR \
