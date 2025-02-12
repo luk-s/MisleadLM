@@ -1,20 +1,20 @@
-import json
 import argparse
-from typing import List
-import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
+import json
 import pathlib
-from trlx.data.configs import TRLConfig
 import re
+from typing import List
+
+import torch
+from flask import Flask, jsonify, make_response, request
 from tqdm import tqdm
+from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer
 
-from flask import Flask, request, jsonify, make_response
-
+from trlx.data.configs import TRLConfig
 
 app = Flask(__name__)
 
 
-model_config = 'XXX'
+model_config = "XXX"
 load_dir = "XXX"
 
 rw_tokenizer = AutoTokenizer.from_pretrained(model_config)
@@ -26,6 +26,7 @@ rw_model.half()
 rw_model.eval()
 rw_device = torch.device("cuda:{}".format(0))
 rw_model.to(rw_device)
+
 
 def get_scores(samples: List[str]):
     scores_list = []
@@ -52,14 +53,14 @@ def get_scores(samples: List[str]):
     scores = torch.cat(scores_list, dim=0)
     return scores
 
- 
-@app.route('/judge', methods=['POST'])
+
+@app.route("/judge", methods=["POST"])
 def get_reward():
     data = json.loads(request.data)
     scores = get_scores(data)
     scores = scores.detach().cpu().tolist()
     return make_response(jsonify(scores))
- 
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8119)

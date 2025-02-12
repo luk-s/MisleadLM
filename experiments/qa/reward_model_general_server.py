@@ -24,6 +24,7 @@ REWARD_MODELS = {
 # TOKENIZER_PATH = "meta-llama/Llama-2-13b-hf"
 SFT_MODEL_PATH = "meta-llama/Llama-3.1-8B-Instruct"
 TOKENIZER_PATH = "meta-llama/Llama-3.1-8B-Instruct"
+BATCH_SIZE = 4
 
 
 def setup_reward_model(tokenizer_path, model_path, checkpoint_path):
@@ -58,13 +59,17 @@ def setup_reward_model(tokenizer_path, model_path, checkpoint_path):
 
 
 def get_scores(samples: List[str]):
+    # Print some stats about the samples
+    sample_lengths = [len(sample) for sample in samples]
+    print(f"Sample lengths: {sample_lengths}")
+    print(f"Number of samples: {len(samples)}")
+
     scores_list = []
-    batch_size = 32
     with torch.no_grad():
-        for i in tqdm(range(0, len(samples), batch_size)):
-            sub_samples = samples[i : i + batch_size]
+        for i in tqdm(range(0, len(samples), BATCH_SIZE)):
+            sub_samples = samples[i : i + BATCH_SIZE]
             sub_samples = [chosen + rw_tokenizer.eos_token for chosen in sub_samples]
-            print(f"prompt lengths: {[len(p) for p in sub_samples]}")
+
             encodings_dict = rw_tokenizer(
                 sub_samples,
                 truncation=False,
@@ -72,7 +77,7 @@ def get_scores(samples: List[str]):
                 padding="longest",
                 return_tensors="pt",
             )
-            print(f"token_lengths: {[len(t) for t in encodings_dict['input_ids']]}")
+
             input_ids = encodings_dict["input_ids"].to(rw_device)
             attn_masks = encodings_dict["attention_mask"].to(rw_device)
             input_ids = input_ids.repeat(2, 1)
