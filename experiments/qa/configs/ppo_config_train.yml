@@ -2,9 +2,9 @@ train:
   seq_length: 12288
   epochs: 500
   total_steps: 100000
-  batch_size: 4
-  minibatch_size: 2
-  eval_batch_size: 4
+  batch_size: 8
+  minibatch_size: 1
+  eval_batch_size: 8
 
   checkpoint_interval: 640
   eval_interval: 640
@@ -41,7 +41,7 @@ scheduler:
 method:
   name: "ppoconfig"
   num_rollouts: 128
-  chunk_size: 2
+  chunk_size: 4
   ppo_epochs: 4
   init_kl_coef: 0.01
   target: 4

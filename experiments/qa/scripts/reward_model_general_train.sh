@@ -46,7 +46,7 @@ NOW=$(date +"%Y-%m-%d_%H-%M-%S")
 EXP_NAME=MODEL_${MODEL_NAME}_DATA_${TRAIN_DATA_NAME}_LR_${LR}_BC_${GLOBAL_BATCH_SIZE}_MAXEPOCH_${MAX_EPOCH}_TIME_${NOW}
 
 SAVE_DIR=../model_checkpoints/reward_models/$EXP_NAME
-LOGGING_DIR=../logging/reward_models/$EXP_NAME
+LOGGING_DIR=../logging/reward_model
 EVAL_STEPS=100
 SAVE_STEPS=100
 

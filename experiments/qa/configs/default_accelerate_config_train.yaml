@@ -2,7 +2,8 @@ command_file: null
 commands: null
 compute_environment: LOCAL_MACHINE
 deepspeed_config:
-  deepspeed_config_file: ../configs/ds_config_bf16.json
+  # deepspeed_config_file: ../configs/ds_config_bf16.json
+  deepspeed_config_file: ../configs/ds_config_zero2_agent_train.json
   zero3_init_flag: false
 distributed_type: DEEPSPEED
 downcast_bf16: 'no'
