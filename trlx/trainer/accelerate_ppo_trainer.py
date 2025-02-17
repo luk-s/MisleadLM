@@ -498,10 +498,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     )
                     # TODO(dahoas): When hydra model works need to also support generation on hydra head
                     if hasattr(self.model, "frozen_head"):
-                        process_id = self.accelerator.process_index
-                        print(
-                            f"[Process {process_id}] Before forward_hydra: all_tokens shape: {all_tokens.shape}"
-                        )
                         ref_logits = self.model.forward_hydra(
                             all_tokens,
                             attention_mask=attention_mask,

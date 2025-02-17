@@ -54,46 +54,55 @@ class AccelerateRLTrainer(BaseRLTrainer):
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
         if config.train.minibatch_size:
-            assert config.train.batch_size % config.train.minibatch_size == 0, "Minibatch size must divide batch size"
+            assert config.train.batch_size % config.train.minibatch_size == 0, (
+                "Minibatch size must divide batch size"
+            )
             self.mb_size = config.train.minibatch_size
         else:
             self.mb_size = config.train.batch_size
         self.num_mb = config.train.batch_size // self.mb_size
         self.mb_count = 0
-        self.accelerator = Accelerator(log_with=config.train.tracker, project_dir=config.train.logging_dir) #, gradient_accumulation_steps=self.num_mb)
+        self.accelerator = Accelerator(
+            log_with=config.train.tracker, project_dir=config.train.logging_dir
+        )  # , gradient_accumulation_steps=self.num_mb)
 
         if self.accelerator.state.deepspeed_plugin is not None:
             # by accelerate's default, arguments in `model.forward` would be casted to half
             if "fp16" in self.accelerator.state.deepspeed_plugin.deepspeed_config:
-                self.accelerator.state.deepspeed_plugin.deepspeed_config["fp16"]["auto_cast"] = False
+                self.accelerator.state.deepspeed_plugin.deepspeed_config["fp16"][
+                    "auto_cast"
+                ] = False
 
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
-        self.model = self.setup_model() # setup model
+        self.model = self.setup_model()  # setup model
         self.opt = self.setup_optimizer()
         self.scheduler = self.setup_scheduler()
 
-        self.tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path, trust_remote_code=True, use_fast=False)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            config.tokenizer.tokenizer_path, trust_remote_code=True, use_fast=False
+        )
         self.tokenizer.padding_side = config.tokenizer.padding_side
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
         self.tokenizer.sep_token = "<sep>"
-        
+
         if self.tokenizer.unk_token is None:
             self.tokenizer.unk_token = self.tokenizer.eos_token
             self.tokenizer.unk_token_id = self.tokenizer.eos_token_id
-        
+
         if config.model.model_arch_type != "seq2seq":
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.unk_token
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token_id = self.tokenizer.unk_token_id
         elif self.tokenizer.pad_token == self.tokenizer.eos_token:
-            assert 'deepseek-coder-v2' in config.tokenizer.tokenizer_path
-            self.tokenizer.pad_token = '<|EOT|>'
+            assert "deepseek-coder-v2" in config.tokenizer.tokenizer_path
+            self.tokenizer.pad_token = "<|EOT|>"
             self.tokenizer.pad_token_id = 100008
-        print(f'trainer tokenizer pad token = {self.tokenizer.pad_token}, pad token id = {self.tokenizer.pad_token_id}')
-
+        print(
+            f"trainer tokenizer pad token = {self.tokenizer.pad_token}, pad token id = {self.tokenizer.pad_token_id}"
+        )
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):
@@ -107,8 +116,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
             num_gpus = f"{self.accelerator.num_processes}gpus"
         branch = get_git_tag()[0]
 
-        date_time=datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-        run_name = "/".join([script_name, model_name, num_gpus, date_time]) + f":{branch}"
+        date_time = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        run_name = (
+            "/".join([script_name, model_name, num_gpus, date_time]) + f":{branch}"
+        )
 
         if self.accelerator.is_main_process and not ray.is_initialized():
             config_dict = self.config.to_dict()
@@ -133,15 +144,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
             elif config.train.tracker == "tensorboard":
                 # flatten config for tensorboard, split list in hparams into flatten config
                 config_dict_flat = flatten_dict(config_dict)
-                config_dict_flat["optimizer/kwargs/beta_1"] = config_dict_flat["optimizer/kwargs/betas"][0]
-                config_dict_flat["optimizer/kwargs/beta_2"] = config_dict_flat["optimizer/kwargs/betas"][1]
+                config_dict_flat["optimizer/kwargs/beta_1"] = config_dict_flat[
+                    "optimizer/kwargs/betas"
+                ][0]
+                config_dict_flat["optimizer/kwargs/beta_2"] = config_dict_flat[
+                    "optimizer/kwargs/betas"
+                ][1]
                 config_dict_flat.pop("optimizer/kwargs/betas", None)
                 self.accelerator.init_trackers(
                     project_name=self.config.train.project_name,
                     config=config_dict_flat,
                 )
             elif config.train.tracker is None:
-                self.accelerator.init_trackers(project_name=self.config.train.project_name)
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name
+                )
             else:
                 raise ValueError(
                     f"Only supported trackers are `wandb` and `tensorboard`. Got: `{config.train.tracker}`. "
@@ -159,9 +176,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # Retrieves model equipped for ppo, ilql, etc
         model = self.get_arch(self.config)
         if self.config.model.model_arch_type == "seq2seq":
-            freeze_bottom_seq2seq_layers(model.base_model, self.config.model.num_layers_unfrozen)
+            freeze_bottom_seq2seq_layers(
+                model.base_model, self.config.model.num_layers_unfrozen
+            )
         else:
-            freeze_bottom_causal_layers(model.base_model, self.config.model.num_layers_unfrozen)
+            freeze_bottom_causal_layers(
+                model.base_model, self.config.model.num_layers_unfrozen
+            )
         # Set the delta tuning strategies
         if self.config.model.delta_kwargs is not None:
             delta_type, delta_kwargs = parse_delta_kwargs(
@@ -194,7 +215,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             manager = GlobalOptimManager.get_instance()
             for module in self.model.modules():
                 if isinstance(module, torch.nn.Embedding):
-                    manager.register_module_override(module, "weight", {"optim_bits": 32})
+                    manager.register_module_override(
+                        module, "weight", {"optim_bits": 32}
+                    )
 
         return optimizer
 
@@ -226,8 +249,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
             else:
                 output_start_ix = prompt_size
 
-            str_prompt = self.tokenizer.decode(prompt[:prompt_size], skip_special_tokens=True)
-            str_output = self.tokenizer.decode(sample[output_start_ix:], skip_special_tokens=True)
+            str_prompt = self.tokenizer.decode(
+                prompt[:prompt_size], skip_special_tokens=True
+            )
+            str_output = self.tokenizer.decode(
+                sample[output_start_ix:], skip_special_tokens=True
+            )
 
             # Trim outputs up to `self.stop_sequences` if any are present
             if self.stop_sequences:
@@ -257,11 +284,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
             kwargs = dict(self.generate_experience_kwargs, **kwargs)
         else:
             kwargs = dict(self.generate_kwargs, **kwargs)
-        with torch.no_grad():          
-            if 'generation_attention_mask' in kwargs:
-                kwargs['eos_token_id'] = self.tokenizer.eop_token_id
-                kwargs['pad_token_id'] = kwargs['eos_token_id']
-                kwargs['generation_attention_mask'] = kwargs['generation_attention_mask'].to(self.accelerator.device)
+        with torch.no_grad():
+            if "generation_attention_mask" in kwargs:
+                kwargs["eos_token_id"] = self.tokenizer.eop_token_id
+                kwargs["pad_token_id"] = kwargs["eos_token_id"]
+                kwargs["generation_attention_mask"] = kwargs[
+                    "generation_attention_mask"
+                ].to(self.accelerator.device)
                 return self.accelerator.unwrap_model(self.model).generate(
                     input_ids=input_ids, **kwargs
                 )
@@ -280,13 +309,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
         kwargs = dict(self.generate_kwargs, **kwargs)
 
         with torch.no_grad():
-            if 'generation_attention_mask' in kwargs:
-                kwargs['eos_token_id'] = self.tokenizer.eop_token_id
-                kwargs['pad_token_id'] = kwargs['eos_token_id']
-                kwargs['generation_attention_mask'] = kwargs['generation_attention_mask'].to(self.accelerator.device)
-                
+            if "generation_attention_mask" in kwargs:
+                kwargs["eos_token_id"] = self.tokenizer.eop_token_id
+                kwargs["pad_token_id"] = kwargs["eos_token_id"]
+                kwargs["generation_attention_mask"] = kwargs[
+                    "generation_attention_mask"
+                ].to(self.accelerator.device)
+
                 return self.accelerator.unwrap_model(self.model).generate(
-                    input_ids=input_ids,  **kwargs
+                    input_ids=input_ids, **kwargs
                 )
             else:
                 return self.accelerator.unwrap_model(self.model).generate(
@@ -298,7 +329,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
         dst_dir = directory or self.config.train.checkpoint_dir
         self.accelerator.save_state(dst_dir, **kwargs)
 
-        if self.config.model.peft_config is not None and self.accelerator.is_main_process:
+        if (
+            self.config.model.peft_config is not None
+            and self.accelerator.is_main_process
+        ):
             # Remove "pytorch_model.bin" because it contains more than necessary,
             # let save_pretrained recreate it with just the value heads.
             model_file = os.path.join(dst_dir, "pytorch_model.bin")
@@ -326,7 +360,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 save_function=self.accelerator.save,
                 is_main_process=self.accelerator.is_main_process,
                 state_dict=self.accelerator.get_state_dict(self.model),
-                safe_serialization=False
+                safe_serialization=False,
             )
         except:
             pass
@@ -366,7 +400,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         stats = {}
         table = []
-        
+
         device = None
 
         for i_sweep, gen_sweep_value in enumerate(gen_sweep_values):
@@ -382,7 +416,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             generate_time = time()
             for i_prompt, prompts in enumerate(self.eval_dataloader):
                 if self.generate_sweep_kwarg:
-                    samples = self.generate_eval(**prompts, **{gen_sweep_arg: gen_sweep_value})
+                    samples = self.generate_eval(
+                        **prompts, **{gen_sweep_arg: gen_sweep_value}
+                    )
                 else:
                     samples = self.generate_eval(**prompts)
                 # print('get samples = ', self.tokenizer.batch_decode(samples, skip_speicial_tokens=True))
@@ -393,20 +429,29 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                 device = samples.device
 
-
                 # assert self.tokenizer.pad_token_id == 100008
 
-                prompt_sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(len(prompts.input_ids))
+                prompt_sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
+                    len(prompts.input_ids)
+                )
                 prompt_sizes = self.accelerator.pad_across_processes(
-                    prompt_sizes.to(samples.device), dim=1, pad_index=self.tokenizer.pad_token_id
+                    prompt_sizes.to(samples.device),
+                    dim=1,
+                    pad_index=self.tokenizer.pad_token_id,
                 )
                 samples = self.accelerator.pad_across_processes(
-                    samples, dim=1, pad_index=self.tokenizer.pad_token_id if "generation_attention_mask" not in prompts else self.tokenizer.eop_token_id
+                    samples,
+                    dim=1,
+                    pad_index=self.tokenizer.pad_token_id
+                    if "generation_attention_mask" not in prompts
+                    else self.tokenizer.eop_token_id,
                 )
                 prompts = self.accelerator.pad_across_processes(
                     prompts.input_ids, dim=1, pad_index=self.tokenizer.pad_token_id
                 )
-                prompts, samples, prompt_sizes = self.accelerator.gather_for_metrics([prompts, samples, prompt_sizes])
+                prompts, samples, prompt_sizes = self.accelerator.gather_for_metrics(
+                    [prompts, samples, prompt_sizes]
+                )
                 # FIXME: samples需要用eop_token来pad
                 # prompts, samples, prompt_sizes = self.accelerator.gather_for_metrics(
                 #     self.accelerator.pad_across_processes(
@@ -430,26 +475,41 @@ class AccelerateRLTrainer(BaseRLTrainer):
             stats["time/generate"] = time() - generate_time
 
             if self.accelerator.is_main_process:
-                str_samples, str_prompts, str_outputs = self.decode(all_prompts, all_samples, all_prompt_sizes)
-                
+                str_samples, str_prompts, str_outputs = self.decode(
+                    all_prompts, all_samples, all_prompt_sizes
+                )
+
                 columns = ["prompt", "output"]
                 columns_data = [str_prompts, str_outputs]
 
-                os.makedirs(f"{self.config.train.checkpoint_dir}/{self.iter_count}", exist_ok=True)
-                
-                with open(f"{self.config.train.checkpoint_dir}/{self.iter_count}/raw_gen.json", 'w') as f:
-                    json.dump([{"sample": sample, "prompt": prompt, "output": output} for sample, prompt, output in zip(str_samples, str_prompts, str_outputs)], f, indent=2)
-                    
+                os.makedirs(
+                    f"{self.config.train.checkpoint_dir}/{self.iter_count}",
+                    exist_ok=True,
+                )
+
+                with open(
+                    f"{self.config.train.checkpoint_dir}/{self.iter_count}/raw_gen.json",
+                    "w",
+                ) as f:
+                    json.dump(
+                        [
+                            {"sample": sample, "prompt": prompt, "output": output}
+                            for sample, prompt, output in zip(
+                                str_samples, str_prompts, str_outputs
+                            )
+                        ],
+                        f,
+                        indent=2,
+                    )
+
                 assert self.metric_fn
                 if self.metric_fn:
                     logger.info("Computing metrics")
                     metric_time = time()
                     metrics = self.metric_fn(
-                        samples=str_samples,
-                        prompts=str_prompts,
-                        outputs=str_outputs
+                        samples=str_samples, prompts=str_prompts, outputs=str_outputs
                     )
-                    rewards = metrics['reward']
+                    rewards = metrics["reward"]
                     if not isinstance(rewards, list):
                         rewards = rewards.tolist()
                     mean_reward = np.mean(rewards)
@@ -457,15 +517,26 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     columns_data.append(rewards)
                     stats[f"reward/mean{sweep_suffix}"] = mean_reward
 
-                    
                     stats["time/metric"] = time() - metric_time
 
                     for k, xs in metrics.items():
-                        if not (isinstance(xs, list) and (isinstance(xs[0], str) or isinstance(xs[0], list))):
+                        if not (
+                            isinstance(xs, list)
+                            and (isinstance(xs[0], str) or isinstance(xs[0], list))
+                        ):
                             print(f"{k}: {xs}")
 
                     mean_metrics = {
-                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1) for k, xs in metrics.items() if not (isinstance(xs, list) and (isinstance(xs[0], str) or isinstance(xs[0], list) or isinstance(xs[0], dict)))
+                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1)
+                        for k, xs in metrics.items()
+                        if not (
+                            isinstance(xs, list)
+                            and (
+                                isinstance(xs[0], str)
+                                or isinstance(xs[0], list)
+                                or isinstance(xs[0], dict)
+                            )
+                        )
                     }
 
                     stats.update(mean_metrics)
@@ -487,32 +558,111 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     columns_data.insert(0, [gen_sweep_value] * len(samples))
 
                 table.append(list(zip(*columns_data)))
-                
-                # print('get metric fn score = ', metrics['oracle reward'])
-                if 'reward@k' in metrics: # programming
-                    gen_log = [{"context": context, "response": response, "reward": reward, "orcale reward": score, "soft oracle reward": soft_reward, "flag": flag} for context, response, reward, score, soft_reward, flag in zip(metrics['contexts'], metrics['responses'], rewards, metrics['oracle reward'], metrics['soft reward'], metrics['all reward'])]
-                    metric_log = {
-                        "mean reward score": mean_reward, 
-                        "mean oracle reward": np.mean(metrics['oracle reward']),
-                        "reward@k": metrics['reward@k'],
-                        "oracle reward@k": metrics['oracle reward@k'],
-                    }
-                elif 'preference reward' in metrics: # QA
-                    gen_log = [{"context": context, "response": response, "reward": reward, "preference reward": preference_reward, "pred": pred, "answer": answer, "answers": eval(candidate_answers)} for context, response, reward, preference_reward, pred, answer, candidate_answers in zip(metrics['contexts'], metrics['responses'], rewards, metrics['preference reward'], metrics['preds'], metrics['gold_answers'], metrics['answers'])]
-                    metric_log = {
-                        "mean reward score": mean_reward, 
-                        "mean preference reward": np.mean(metrics['preference reward']),
-                        "acc": metrics['acc'],
-                        "judge_reward_correct": metrics['judge_reward_correct'],
-                        "judge_reward_incorrect": metrics['judge_reward_incorrect'],
-                    }
 
-                os.makedirs(f"{self.config.train.checkpoint_dir}/{self.iter_count}", exist_ok=True)
-                
-                with open(f"{self.config.train.checkpoint_dir}/{self.iter_count}/gen.json", 'w') as f:
+                # print('get metric fn score = ', metrics['oracle reward'])
+                if "reward@k" in metrics:  # programming
+                    gen_log = [
+                        {
+                            "context": context,
+                            "response": response,
+                            "reward": reward,
+                            "orcale reward": score,
+                            "soft oracle reward": soft_reward,
+                            "flag": flag,
+                        }
+                        for context, response, reward, score, soft_reward, flag in zip(
+                            metrics["contexts"],
+                            metrics["responses"],
+                            rewards,
+                            metrics["oracle reward"],
+                            metrics["soft reward"],
+                            metrics["all reward"],
+                        )
+                    ]
+                    metric_log = {
+                        "mean reward score": mean_reward,
+                        "mean oracle reward": np.mean(metrics["oracle reward"]),
+                        "reward@k": metrics["reward@k"],
+                        "oracle reward@k": metrics["oracle reward@k"],
+                    }
+                elif "preference reward" in metrics:  # QA old
+                    gen_log = [
+                        {
+                            "context": context,
+                            "response": response,
+                            "reward": reward,
+                            "preference reward": preference_reward,
+                            "pred": pred,
+                            "answer": answer,
+                            "answers": eval(candidate_answers),
+                        }
+                        for context, response, reward, preference_reward, pred, answer, candidate_answers in zip(
+                            metrics["contexts"],
+                            metrics["responses"],
+                            rewards,
+                            metrics["preference reward"],
+                            metrics["preds"],
+                            metrics["gold_answers"],
+                            metrics["answers"],
+                        )
+                    ]
+                    metric_log = {
+                        "mean reward score": mean_reward,
+                        "mean preference reward": np.mean(metrics["preference reward"]),
+                        "acc": metrics["acc"],
+                        "judge_reward_correct": metrics["judge_reward_correct"],
+                        "judge_reward_incorrect": metrics["judge_reward_incorrect"],
+                    }
+                elif "arguments" in metrics:  # QA new
+                    gen_log = [
+                        {
+                            "story": story,
+                            "question": question,
+                            "answer_a": answer_a,
+                            "answer_b": answer_b,
+                            "response": response,
+                            "predicted_answer": predicted_answer,
+                            "true_answer": true_answer,
+                        }
+                        for story, question, answer_a, answer_b, response, predicted_answer, true_answer in zip(
+                            metrics["stories"],
+                            metrics["questions"],
+                            metrics["answers_a"],
+                            metrics["answers_b"],
+                            metrics["arguments"],
+                            metrics["predicted_answers"],
+                            metrics["true_answers"],
+                        )
+                    ]
+                    metric_log = {
+                        "mean reward score": mean_reward,
+                        "fraction_incomplete_responses": metrics[
+                            "fraction_incomplete_responses"
+                        ],
+                        "reward_where_correct": metrics["reward_where_correct"],
+                        "reward_where_incorrect": metrics["reward_where_incorrect"],
+                        "reward_where_incomplete_responses": metrics[
+                            "reward_where_incomplete_responses"
+                        ],
+                    }
+                else:
+                    raise ValueError(f"Unknown metrics: {metrics.keys()}")
+
+                os.makedirs(
+                    f"{self.config.train.checkpoint_dir}/{self.iter_count}",
+                    exist_ok=True,
+                )
+
+                with open(
+                    f"{self.config.train.checkpoint_dir}/{self.iter_count}/gen.json",
+                    "w",
+                ) as f:
                     json.dump(gen_log, f, indent=2)
-                with open(f"{self.config.train.checkpoint_dir}/{self.iter_count}/metric.json", 'w') as f:
-                    json.dump(metric_log, f, indent=2)             
+                with open(
+                    f"{self.config.train.checkpoint_dir}/{self.iter_count}/metric.json",
+                    "w",
+                ) as f:
+                    json.dump(metric_log, f, indent=2)
 
         # Log and display evaluation metrics
         logger.info("Summarizing evaluation")
@@ -544,7 +694,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # We can't use accelerator.accumulate() since that checks if the dataloader is exhausted
         # and we do exhaust the eval dataloader right before each training loop
         self.mb_count += 1
-        assert self.mb_count // self.num_mb <= self.config.train.total_steps, "Beyond total steps, something is wrong"
+        assert self.mb_count // self.num_mb <= self.config.train.total_steps, (
+            "Beyond total steps, something is wrong"
+        )
         if (
             self.mb_count % self.accelerator.gradient_accumulation_steps == 0
             or self.mb_count // self.num_mb >= self.config.train.total_steps
@@ -565,7 +717,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
         for k, v in self.config.method.gen_kwargs.items():
             if isinstance(v, list):
                 if self.generate_sweep_kwarg is not None:
-                    logger.info("Only a single sweep is allowed, {k} is going to be set to {v[0]}")
+                    logger.info(
+                        "Only a single sweep is allowed, {k} is going to be set to {v[0]}"
+                    )
                     self.generate_kwargs[k] = v[0]
                 else:
                     self.generate_sweep_kwarg = (k, v)
@@ -610,40 +764,68 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # We create a new dataloader (so new data ordering and shuffle) each inner epoch
                 train_dataloader = self.create_train_dataloader()
                 # For each batch
-                for minibatch in MiniBatchIterator(train_dataloader, self.mb_size, self.num_mb):
+                for minibatch in MiniBatchIterator(
+                    train_dataloader, self.mb_size, self.num_mb
+                ):
                     # FIXME: approx_kl在累加
-                    
+
                     forward_time = 0.0
                     backward_time = 0.0
                     stats_accum = []
                     for microbatch in minibatch:
                         with self._accumulate():
                             forward_time -= time()
+                            # print(
+                            #     f"query_tensors shape: {microbatch.query_tensors.shape}"
+                            # )
+                            # print(
+                            #     f"response_tensors shape: {microbatch.response_tensors.shape}"
+                            # )
+                            # print(f"logprobs shape: {microbatch.logprobs.shape}")
+                            # print(f"values shape: {microbatch.values.shape}")
+                            # print(f"rewards shape: {microbatch.rewards.shape}")
                             loss, stats = self.loss(microbatch)
                             forward_time += time()
                             backward_time -= time()
                             self.model.train()
-                            self.accelerator.backward(loss) # 需要给accelerator传入gradient accumulation
+                            self.accelerator.backward(
+                                loss
+                            )  # 需要给accelerator传入gradient accumulation
                             self.model.eval()
                             backward_time += time()
                             stats_accum.append(stats)
-
                     forward_time /= self.num_mb
                     backward_time /= self.num_mb
                     # TODO(Dahoas): Best way to combine stats between mbs?
                     # How does accelerate do it?
-                    stats = {key: sum([stats[key] for stats in stats_accum]) / self.num_mb for key in stats_accum[0]}
+                    stats = {
+                        key: sum([stats[key] for stats in stats_accum]) / self.num_mb
+                        for key in stats_accum[0]
+                    }
+
+                    # Clear GPU cache after backward pass
+                    torch.cuda.empty_cache()
 
                     self.opt.step()
                     self.opt.zero_grad()
+
+                    # Clear GPU cache after optimizer step
+                    torch.cuda.empty_cache()
+
                     self.scheduler.step()
                     self.iter_count += 1
 
-
                     if self.iter_count % self.config.train.checkpoint_interval == 0:
-                        os.makedirs(f"{self.config.train.checkpoint_dir}/{self.iter_count}", exist_ok=True)
-                        assert os.path.exists(f"{self.config.train.checkpoint_dir}/{self.iter_count}")
-                        self.save_pretrained(f"{self.config.train.checkpoint_dir}/{self.iter_count}")
+                        os.makedirs(
+                            f"{self.config.train.checkpoint_dir}/{self.iter_count}",
+                            exist_ok=True,
+                        )
+                        assert os.path.exists(
+                            f"{self.config.train.checkpoint_dir}/{self.iter_count}"
+                        )
+                        self.save_pretrained(
+                            f"{self.config.train.checkpoint_dir}/{self.iter_count}"
+                        )
 
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
@@ -661,14 +843,20 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 best_reward = stats.get("reward/mean")
                                 do_save = True
                             # in case ILQL reports reward estimate as one of its metrics
-                            elif stats.get("metrics/reward", -float("inf")) > best_reward:
+                            elif (
+                                stats.get("metrics/reward", -float("inf")) > best_reward
+                            ):
                                 best_reward = stats.get("metrics/reward")
                                 do_save = True
                             else:
                                 do_save = False
-                            do_save = torch.tensor(do_save, device=self.accelerator.device)
+                            do_save = torch.tensor(
+                                do_save, device=self.accelerator.device
+                            )
                             if torch.distributed.is_initialized():
-                                torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
+                                torch.distributed.all_reduce(
+                                    do_save, torch.distributed.ReduceOp.MAX
+                                )
                             # if do_save:
                             #     best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
                             #     logger.info(f"Saving the best state so far into {best_path}")
@@ -680,14 +868,18 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         #     self.save("state")
                         #     with open("state/state.json", "w") as f:
                         #         json.dump(dict(iter_count=self.iter_count), f)
-                            # checkpoint = Checkpoint.from_directory("state")
-                            # session.report(filter_non_scalars(stats), checkpoint=checkpoint)
-                    
+                        # checkpoint = Checkpoint.from_directory("state")
+                        # session.report(filter_non_scalars(stats), checkpoint=checkpoint)
+
                     assert not ray.is_initialized()
                     if not ray.is_initialized():
                         self.accelerator.log(stats, step=self.iter_count)
 
-                    desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
+                    desc = " | ".join(
+                        f"{k}: {v:.2f}"
+                        for k, v in stats.items()
+                        if k.startswith("loss")
+                    )
                     tbar.set_description(f"[{desc}]")
                     tbar.update()
 
@@ -697,7 +889,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                 self.post_backward_callback()
 
-            self.post_epoch_callback() # 重新rollout
+            self.post_epoch_callback()  # 重新rollout
         tbar.close()
 
     @abstractmethod

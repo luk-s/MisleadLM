@@ -272,11 +272,15 @@ class CausalLMWithValueHead(nn.Module):
         self.v_head = make_head(hf_get_hidden_size(self.config), 1, dtype)
 
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
-        self.base_model_transformer_args = inspect.getfullargspec(self.base_model.transformer.forward).args
+        self.base_model_transformer_args = inspect.getfullargspec(
+            self.base_model.transformer.forward
+        ).args
 
     def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
-        return {k: v for k, v in kwargs.items() if k in self.base_model_transformer_args}
+        return {
+            k: v for k, v in kwargs.items() if k in self.base_model_transformer_args
+        }
 
     def generate(self, input_ids, **kwargs):
         return self.base_model.generate(input_ids, **kwargs)
@@ -332,30 +336,40 @@ class CausalLMHydraWithValueHead(nn.Module):
         build_complete_model: bool = True,
     ):
         super().__init__()
-        print('config = ', config)
+        print("config = ", config)
 
         self.num_layers_unfrozen = num_layers_unfrozen
 
         self.setup_base_model(config, load_weights)
-        
+
         if build_complete_model:
             self.build_complete_model()
 
-        
-
-    def setup_base_model(self, config: Union[transformers.PretrainedConfig, str], load_weights=True):
-         # from pre_trained
+    def setup_base_model(
+        self, config: Union[transformers.PretrainedConfig, str], load_weights=True
+    ):
+        # from pre_trained
         if isinstance(config, str):
-            if 'glm' in config:
-                self.config = transformers.AutoConfig.from_pretrained(config, trust_remote_code=True)
-                self.base_model = transformers.AutoModelForSeq2SeqLM.from_pretrained(config, trust_remote_code=True) 
+            if "glm" in config:
+                self.config = transformers.AutoConfig.from_pretrained(
+                    config, trust_remote_code=True
+                )
+                self.base_model = transformers.AutoModelForSeq2SeqLM.from_pretrained(
+                    config, trust_remote_code=True
+                )
             else:
-                print('gradient checkpointing & bf16')
-                self.config = transformers.AutoConfig.from_pretrained(config, trust_remote_code=True)
+                print("gradient checkpointing & bf16")
+                self.config = transformers.AutoConfig.from_pretrained(
+                    config, trust_remote_code=True
+                )
                 if load_weights:
-                    self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config, trust_remote_code=True)
+                    self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
+                        config, trust_remote_code=True
+                    )
                 else:
-                    self.base_model = transformers.AutoModelForCausalLM.from_config(self.config)
+                    self.base_model = transformers.AutoModelForCausalLM.from_config(
+                        self.config
+                    )
         else:
             self.config = config
             self.base_model = transformers.AutoModelForCausalLM.from_config(config)
@@ -377,7 +391,7 @@ class CausalLMHydraWithValueHead(nn.Module):
                     lm_head=self.base_model.lm_head,
                     embedding_dropout=self.base_model.transformer.transformer.embedding_dropout,
                     position_embeddings=self.base_model.transformer.transformer.position_embeddings,
-                    block_position_embeddings=self.base_model.transformer.transformer.block_position_embeddings
+                    block_position_embeddings=self.base_model.transformer.transformer.block_position_embeddings,
                 )
             else:
                 self.frozen_head = branch_class(
@@ -387,11 +401,15 @@ class CausalLMHydraWithValueHead(nn.Module):
                     lm_head=self.base_model.lm_head,
                 )
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
-        self.base_model_transformer_args = inspect.getfullargspec(self.base_model.transformer.forward).args
+        self.base_model_transformer_args = inspect.getfullargspec(
+            self.base_model.transformer.forward
+        ).args
 
     def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
-        return {k: v for k, v in kwargs.items() if k in self.base_model_transformer_args}
+        return {
+            k: v for k, v in kwargs.items() if k in self.base_model_transformer_args
+        }
 
     def generate(self, input_ids, **x):
         return self.base_model.generate(input_ids, **x)
@@ -415,7 +433,7 @@ class CausalLMHydraWithValueHead(nn.Module):
         if not return_dict:
             return outputs.logits
         return outputs
-    
+
     def state_dict(self, *args, heads_only=False, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
@@ -425,13 +443,17 @@ class CausalLMHydraWithValueHead(nn.Module):
         if not heads_only:
             state_dict = {
                 **state_dict,
-                **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs)),
+                **self.base_model.state_dict(
+                    *args, **dict(prefix="base_model.", **kwargs)
+                ),
             }
 
             if self.frozen_head:
                 state_dict = {
                     **state_dict,
-                    **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs)),
+                    **self.frozen_head.state_dict(
+                        *args, **dict(prefix="frozen_head.", **kwargs)
+                    ),
                 }
 
         return state_dict
@@ -464,7 +486,7 @@ class CausalLMHydraWithValueHead(nn.Module):
         # print('transformer outputs.keys = ', transformer_outputs.keys())
         last_hidden_state = transformer_outputs.last_hidden_state
         # print('last hidden state.shape = ', last_hidden_state.shape)
-        if self.config.architectures[0] == 'GLMModel': # glm
+        if self.config.architectures[0] == "GLMModel":  # glm
             lm_logits = transformer_outputs.logits
             hidden_states = transformer_outputs.mems
             # print('hidden states len = ', len(hidden_states))
@@ -473,7 +495,7 @@ class CausalLMHydraWithValueHead(nn.Module):
             lm_logits = self.base_model.lm_head(last_hidden_state)
             hidden_states = transformer_outputs.hidden_states
         value = self.v_head(last_hidden_state).squeeze(-1)
-            
+
         if not return_dict:
             outputs = (lm_logits,) + transformer_outputs[1:] + (value,)
             return outputs
@@ -487,7 +509,7 @@ class CausalLMHydraWithValueHead(nn.Module):
             cross_attentions=None,
             value=value,
         )
-        
+
     def save_pretrained(self, *args, **kwargs):
         """Save the pretrained model to a directory. This method is a wrapper
         around `transformers.PreTrainedModel.save_pretrained`. Please refer to
@@ -508,9 +530,10 @@ class CausalLMHydraWithValueHead(nn.Module):
             kwargs["state_dict"] = state_dict
         return self.base_model.save_pretrained(*args, **kwargs)
 
-
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, config, num_layers_unfrozen=-1, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, config, num_layers_unfrozen=-1, **kwargs
+    ):
         """
         Loads a CausalLMHydraWithValueHead model from a pretrained checkpoint.
 
@@ -523,56 +546,77 @@ class CausalLMHydraWithValueHead(nn.Module):
         Returns:
             CausalLMHydraWithValueHead: The loaded model.
         """
-    
+
         # Instantiate an empty shell of the base model
-        model = cls(config, num_layers_unfrozen=num_layers_unfrozen, build_complete_model=False, load_weights=False, **kwargs)
-    
+        model = cls(
+            config,
+            num_layers_unfrozen=num_layers_unfrozen,
+            build_complete_model=False,
+            load_weights=False,
+            **kwargs,
+        )
+
         # Load state_dict, handling both single and sharded checkpoints
         checkpoint_path = Path(pretrained_model_name_or_path)
         if checkpoint_path.is_dir():
             # Find all shard files matching the pattern 'pytorch_model-*-of-*.bin'
-            shard_pattern1 = checkpoint_path / 'pytorch_model-*-of-*.bin'
-            shard_pattern2 = checkpoint_path / 'model-*-of-*.safetensors'
+            shard_pattern1 = checkpoint_path / "pytorch_model-*-of-*.bin"
+            shard_pattern2 = checkpoint_path / "model-*-of-*.safetensors"
             shard_files1 = sorted(shard_pattern1.parent.glob(shard_pattern1.name))
             shard_files2 = sorted(shard_pattern2.parent.glob(shard_pattern2.name))
 
             if not shard_files1 and not shard_files2:
-                raise ValueError(f"No shard files found in directory: {checkpoint_path}")
-            
+                raise ValueError(
+                    f"No shard files found in directory: {checkpoint_path}"
+                )
+
             state_dict = {}
             for shard_file in shard_files1:
                 print(f"Loading shard: {shard_file}")
-                shard_state = torch.load(shard_file, map_location="cpu", weights_only=True)
+                shard_state = torch.load(
+                    shard_file, map_location="cpu", weights_only=True
+                )
                 state_dict.update(shard_state)
             for shard_file in shard_files2:
                 print(f"Loading shard: {shard_file}")
-                shard_state = torch.load(shard_file, map_location="cpu", weights_only=True)
+                shard_state = torch.load(
+                    shard_file, map_location="cpu", weights_only=True
+                )
                 state_dict.update(shard_state)
-        else:   
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    
+        else:
+            state_dict = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True
+            )
+
         # Separate state_dict into components
         base_model_model_state_dict = {}
         base_model_rest_state_dict = {}
         v_head_state_dict = {}
         frozen_head_state_dict = {}
-    
+
         for key, value in state_dict.items():
-            
-            if key.startswith('v_head.'):
-                new_key = key.replace('v_head.', '')
+            if key.startswith("v_head."):
+                new_key = key.replace("v_head.", "")
                 v_head_state_dict[new_key] = value
-            elif key.startswith('base_model.') or key.startswith('model.') or key.startswith('lm_head.'):
-                new_key = key.replace('base_model.', '')
-                if new_key.startswith('model') or new_key.startswith('lm_head'):
+            elif (
+                key.startswith("base_model.")
+                or key.startswith("model.")
+                or key.startswith("lm_head.")
+            ):
+                new_key = key.replace("base_model.", "")
+                if new_key.startswith("model") or new_key.startswith("lm_head"):
                     base_model_model_state_dict[new_key] = value
                 else:
                     base_model_rest_state_dict[new_key] = value
-            elif key.startswith('frozen_head.') and hasattr(model, 'frozen_head') and model.frozen_head is not None:
-                print(f'Adding key:{key} to frozen_head_state_dict')
-                new_key = key.replace('frozen_head.', '')
+            elif (
+                key.startswith("frozen_head.")
+                and hasattr(model, "frozen_head")
+                and model.frozen_head is not None
+            ):
+                print(f"Adding key:{key} to frozen_head_state_dict")
+                new_key = key.replace("frozen_head.", "")
                 frozen_head_state_dict[new_key] = value
-    
+
         # Print the keys of all the state_dicts
         # print(f'base_model_model_state_dict keys:\n{base_model_model_state_dict.keys()}\n\n')
         # print(f'base_model_rest_state_dict keys:\n{base_model_rest_state_dict.keys()}\n\n')
@@ -591,24 +635,28 @@ class CausalLMHydraWithValueHead(nn.Module):
         else:
             # We do have weights for the entire base model, so first build the complete base model shell, then load the weights
             model.build_complete_model()
-            base_model_state_dict = {**base_model_model_state_dict, **base_model_rest_state_dict}
+            base_model_state_dict = {
+                **base_model_model_state_dict,
+                **base_model_rest_state_dict,
+            }
             model.base_model.load_state_dict(base_model_state_dict, strict=True)
-
 
         # Optional: Populate the remaining components with the weights
         if v_head_state_dict:
             model.v_head.load_state_dict(v_head_state_dict, strict=True)
-    
+
         if frozen_head_state_dict:
-            if hasattr(model, 'frozen_head') and model.frozen_head is not None:
+            if hasattr(model, "frozen_head") and model.frozen_head is not None:
                 model.frozen_head.load_state_dict(frozen_head_state_dict, strict=True)
             else:
-                print("Warning: State dict contains frozen_head keys but the model does not have a frozen_head.")
+                print(
+                    "Warning: State dict contains frozen_head keys but the model does not have a frozen_head."
+                )
         else:
             print("Warning: State dict does not contain frozen_head keys.")
-        
 
         return model
+
 
 @dataclass
 class Seq2SeqLMOutput(ModelOutput):
@@ -635,12 +683,16 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
             self.config = transformers.AutoConfig.from_pretrained(config)
         else:
             self.config = config
-        self.base_model = transformers.AutoModelForSeq2SeqLM.from_pretrained(self.config.name_or_path)
+        self.base_model = transformers.AutoModelForSeq2SeqLM.from_pretrained(
+            self.config.name_or_path
+        )
         self.v_head = make_head(hf_get_hidden_size(self.config), 1)
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
-            self.frozen_head = T5Branch(self.config, self.base_model, self.num_layers_unfrozen)
+            self.frozen_head = T5Branch(
+                self.config, self.base_model, self.num_layers_unfrozen
+            )
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
         self.base_model_args = inspect.getfullargspec(self.base_model.forward).args
 
@@ -651,10 +703,14 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
     def generate(self, input_ids, **x):
         return self.base_model.generate(input_ids, **x)
 
-    def forward_hydra(self, input_ids, attention_mask, decoder_input_ids, **forward_kwargs):
+    def forward_hydra(
+        self, input_ids, attention_mask, decoder_input_ids, **forward_kwargs
+    ):
         forward_kwargs = self._get_compatible_forward_kwargs(**forward_kwargs)
         forward_kwargs["return_dict"] = True
-        output = self.forward(input_ids, attention_mask, decoder_input_ids, **forward_kwargs)
+        output = self.forward(
+            input_ids, attention_mask, decoder_input_ids, **forward_kwargs
+        )
         all_hidden_states = output.decoder_hidden_states
         # Get output of last frozen hidden layer
         # Select hidden state before first layer of branch.
@@ -763,10 +819,14 @@ class T5Branch(transformers.PreTrainedModel):
 
         attention_mask = torch.ones(batch_size, seq_length, device=hidden_states.device)
 
-        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        extended_attention_mask = self.get_extended_attention_mask(
+            attention_mask, input_shape
+        )
         encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
 
-        encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
+        encoder_extended_attention_mask = self.invert_attention_mask(
+            encoder_attention_mask
+        )
         position_bias = None
         encoder_decoder_position_bias = None
 
@@ -853,12 +913,20 @@ class GPTModelBranch(transformers.PreTrainedModel):
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
         batch_size = hidden_states.size()[0]
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         device = hidden_states.device
 
@@ -908,15 +976,21 @@ class GPTModelBranch(transformers.PreTrainedModel):
 
         presents = () if use_cache else None
         all_self_attentions = () if output_attentions else None
-        all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
+        all_cross_attentions = (
+            () if output_attentions and self.config.add_cross_attention else None
+        )
         all_hidden_states = () if output_hidden_states else None
-        for i, (block, layer_past) in enumerate(zip(self.transformer_blocks, past_key_values)):
+        for i, (block, layer_past) in enumerate(
+            zip(self.transformer_blocks, past_key_values)
+        ):
             # Model parallel
             if self.model_parallel:
                 torch.cuda.set_device(hidden_states.device)
                 # Ensure layer_past is on same device as hidden_states (might not be correct)
                 if layer_past is not None:
-                    layer_past = tuple(past_state.to(hidden_states.device) for past_state in layer_past)
+                    layer_past = tuple(
+                        past_state.to(hidden_states.device) for past_state in layer_past
+                    )
                 # Ensure that attention_mask is always on the same device as hidden_states
                 if attention_mask is not None:
                     attention_mask = attention_mask.to(hidden_states.device)
@@ -953,9 +1027,13 @@ class GPTModelBranch(transformers.PreTrainedModel):
                 presents = presents + (outputs[1],)
 
             if output_attentions:
-                all_self_attentions = all_self_attentions + (outputs[2 if use_cache else 1],)
+                all_self_attentions = all_self_attentions + (
+                    outputs[2 if use_cache else 1],
+                )
                 if self.config.add_cross_attention:
-                    all_cross_attentions = all_cross_attentions + (outputs[3 if use_cache else 2],)
+                    all_cross_attentions = all_cross_attentions + (
+                        outputs[3 if use_cache else 2],
+                    )
 
             # Model Parallel: If it's the last layer for that device, put things on the next device
             if self.model_parallel:
@@ -999,6 +1077,7 @@ class GPTModelBranch(transformers.PreTrainedModel):
             value=None,
         )
 
+
 class GLMModelBranch(transformers.PreTrainedModel):
     def __init__(
         self,
@@ -1008,7 +1087,7 @@ class GLMModelBranch(transformers.PreTrainedModel):
         lm_head: nn.Module,
         embedding_dropout,
         position_embeddings,
-        block_position_embeddings
+        block_position_embeddings,
     ):
         super().__init__(config)
 
@@ -1058,30 +1137,42 @@ class GLMModelBranch(transformers.PreTrainedModel):
                 m = hidden_states.new_ones((1, seq_length, seq_length))
                 m = torch.tril(m)
                 if is_scalar:
-                    m[0, :, :int(sep)] = 1
+                    m[0, :, : int(sep)] = 1
                 else:
                     m = m.expand(batch_size, -1, -1)
-                    ids = torch.arange(seq_length, device=sep.device, dtype=sep.dtype).view(1, -1)
+                    ids = torch.arange(
+                        seq_length, device=sep.device, dtype=sep.dtype
+                    ).view(1, -1)
                     mask = ids < sep.view(-1, 1)
                     m = m.masked_fill(mask.unsqueeze(1).expand_as(m), 1)
                 if memory_length > 0:
                     m = m.expand(batch_size, -1, -1)
-                    m = torch.cat((hidden_states.new_ones((batch_size, seq_length, memory_length)), m), dim=2)
+                    m = torch.cat(
+                        (
+                            hidden_states.new_ones(
+                                (batch_size, seq_length, memory_length)
+                            ),
+                            m,
+                        ),
+                        dim=2,
+                    )
                 m = m.unsqueeze(1)
                 return m
 
-            attention_mask = build_mask_matrix(query_length, sep, memory_length=memory_length)
+            attention_mask = build_mask_matrix(
+                query_length, sep, memory_length=memory_length
+            )
         else:
             if attention_mask.dim() == 2:
                 attention_mask = attention_mask.unsqueeze(1).unsqueeze(1)
-            attention_mask = attention_mask[:, :, :, -query_length - memory_length:]
+            attention_mask = attention_mask[:, :, :, -query_length - memory_length :]
 
         # position_embedding已经加完了
         # if self.block_position_encoding:
         # 默认开启block position encoding
         # position_ids, block_position_ids = position_ids[:, 0], position_ids[:, 1]
         # position_embeddings = self.position_embeddings(position_ids)
-        
+
         # hidden_states = hidden_states + position_embeddings
         # if self.block_position_encoding:
         # block_position_embeddings = self.block_position_embeddings(block_position_ids)
@@ -1090,44 +1181,60 @@ class GLMModelBranch(transformers.PreTrainedModel):
 
         # def check_detach(_hidden_states):
         #     return _hidden_states.detach()
-        
+
         all_hidden_states = () if output_hidden_states else None
-        
+
         for i, layer in enumerate(self.transformer_blocks):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             args = [hidden_states, attention_mask]
             mem_i = None
             hidden_states = layer(*args, mem=mem_i)
-        
+
         # Final layer norm.
         output = self.final_norm(hidden_states)
         if output_hidden_states:
             all_hidden_states += (output,)
         lm_logits = F.linear(output, self.lm_head.weight)
-        
+
         return CausalLMOutputWithCrossAttentions(
-            logits=lm_logits,
-            hidden_states=all_hidden_states
+            logits=lm_logits, hidden_states=all_hidden_states
         )
 
 
 # Copied from transformers.models.bart.modeling_bart._make_causal_mask
 def _make_causal_mask(
-    input_ids_shape: torch.Size, dtype: torch.dtype, device: torch.device, past_key_values_length: int = 0
+    input_ids_shape: torch.Size,
+    dtype: torch.dtype,
+    device: torch.device,
+    past_key_values_length: int = 0,
 ):
     """
     Make causal mask used for bi-directional self-attention.
     """
     bsz, tgt_len = input_ids_shape
-    mask = torch.full((tgt_len, tgt_len), torch.tensor(torch.finfo(dtype).min, device=device), device=device)
+    mask = torch.full(
+        (tgt_len, tgt_len),
+        torch.tensor(torch.finfo(dtype).min, device=device),
+        device=device,
+    )
     mask_cond = torch.arange(mask.size(-1), device=device)
     mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
     mask = mask.to(dtype)
 
     if past_key_values_length > 0:
-        mask = torch.cat([torch.zeros(tgt_len, past_key_values_length, dtype=dtype, device=device), mask], dim=-1)
-    return mask[None, None, :, :].expand(bsz, 1, tgt_len, tgt_len + past_key_values_length)
+        mask = torch.cat(
+            [
+                torch.zeros(
+                    tgt_len, past_key_values_length, dtype=dtype, device=device
+                ),
+                mask,
+            ],
+            dim=-1,
+        )
+    return mask[None, None, :, :].expand(
+        bsz, 1, tgt_len, tgt_len + past_key_values_length
+    )
 
 
 # Copied from transformers.models.bart.modeling_bart._expand_mask
@@ -1142,7 +1249,9 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
 
     inverted_mask = 1.0 - expanded_mask
 
-    return inverted_mask.masked_fill(inverted_mask.to(torch.bool), torch.finfo(dtype).min)
+    return inverted_mask.masked_fill(
+        inverted_mask.to(torch.bool), torch.finfo(dtype).min
+    )
 
 
 class LlamaModelBranch(transformers.PreTrainedModel):
@@ -1176,8 +1285,10 @@ class LlamaModelBranch(transformers.PreTrainedModel):
 
         for parameter in self.parameters():
             parameter.requires_grad_(False)
-    
-    def _prepare_decoder_attention_mask(self, attention_mask, input_shape, inputs_embeds, past_key_values_length):
+
+    def _prepare_decoder_attention_mask(
+        self, attention_mask, input_shape, inputs_embeds, past_key_values_length
+    ):
         # create causal mask
         # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
         combined_attention_mask = None
@@ -1191,11 +1302,13 @@ class LlamaModelBranch(transformers.PreTrainedModel):
 
         if attention_mask is not None:
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-            expanded_attn_mask = _expand_mask(attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]).to(
-                inputs_embeds.device
-            )
+            expanded_attn_mask = _expand_mask(
+                attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]
+            ).to(inputs_embeds.device)
             combined_attention_mask = (
-                expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
+                expanded_attn_mask
+                if combined_attention_mask is None
+                else expanded_attn_mask + combined_attention_mask
             )
 
         return combined_attention_mask
@@ -1217,12 +1330,20 @@ class LlamaModelBranch(transformers.PreTrainedModel):
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
         batch_size = hidden_states.size()[0]
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         batch_size, seq_length, _ = hidden_states.shape
         device = hidden_states.device
@@ -1236,7 +1357,10 @@ class LlamaModelBranch(transformers.PreTrainedModel):
 
         if position_ids is None:
             position_ids = torch.arange(
-                past_key_values_length, seq_length + past_key_values_length, dtype=torch.long, device=device
+                past_key_values_length,
+                seq_length + past_key_values_length,
+                dtype=torch.long,
+                device=device,
             )
             position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
         else:
@@ -1247,9 +1371,12 @@ class LlamaModelBranch(transformers.PreTrainedModel):
                 (batch_size, seq_length_with_past), dtype=torch.bool, device=device
             )
         attention_mask = self._prepare_decoder_attention_mask(
-            attention_mask, (batch_size, seq_length), hidden_states, past_key_values_length
+            attention_mask,
+            (batch_size, seq_length),
+            hidden_states,
+            past_key_values_length,
         )
-        
+
         # decoder layers
         # all_hidden_states = () if output_hidden_states else None
         # all_self_attentions = () if output_attentions else None
@@ -1257,18 +1384,20 @@ class LlamaModelBranch(transformers.PreTrainedModel):
 
         presents = () if use_cache else None
         all_self_attentions = () if output_attentions else None
-        all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
+        all_cross_attentions = (
+            () if output_attentions and self.config.add_cross_attention else None
+        )
         all_hidden_states = () if output_hidden_states else None
         for i, block in enumerate(self.transformer_blocks):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
             past_key_value = past_key_values[i] if past_key_values is not None else None
-        
+
             outputs = block(
                 hidden_states,
                 attention_mask=attention_mask,
-                position_ids=position_ids, 
+                position_ids=position_ids,
                 past_key_value=past_key_value,
                 output_attentions=output_attentions,
                 use_cache=use_cache,
@@ -1279,9 +1408,13 @@ class LlamaModelBranch(transformers.PreTrainedModel):
                 presents = presents + (outputs[1],)
 
             if output_attentions:
-                all_self_attentions = all_self_attentions + (outputs[2 if use_cache else 1],)
+                all_self_attentions = all_self_attentions + (
+                    outputs[2 if use_cache else 1],
+                )
                 if self.config.add_cross_attention:
-                    all_cross_attentions = all_cross_attentions + (outputs[3 if use_cache else 2],)
+                    all_cross_attentions = all_cross_attentions + (
+                        outputs[3 if use_cache else 2],
+                    )
 
         hidden_states = self.final_norm(hidden_states)
 
@@ -1305,6 +1438,7 @@ class LlamaModelBranch(transformers.PreTrainedModel):
             cross_attentions=None,
             value=None,
         )
+
 
 class DeepseekV2Branch(transformers.PreTrainedModel):
     """
@@ -1338,20 +1472,20 @@ class DeepseekV2Branch(transformers.PreTrainedModel):
         # Turning off grad saves memory
         for parameter in self.parameters():
             parameter.requires_grad_(False)
-    
+
     def forward(
-            self,
-            hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
-            output_shape: torch.Tensor,  # output_size given by main trunk
-            attention_mask: Optional[torch.Tensor] = None,
-            position_ids: Optional[torch.LongTensor] = None,
-            past_key_values: Optional[List[torch.FloatTensor]] = None,
-            labels: Optional[torch.LongTensor] = None,
-            use_cache: Optional[bool] = None,
-            output_attentions: Optional[bool] = None,
-            output_hidden_states: Optional[bool] = None,
-            return_dict: Optional[bool] = None,
-        ):
+        self,
+        hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
+        output_shape: torch.Tensor,  # output_size given by main trunk
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ):
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -1372,10 +1506,10 @@ class DeepseekV2Branch(transformers.PreTrainedModel):
 
         past_key_values_length = 0
         # if use_cache:
-            # use_legacy_cache = not isinstance(past_key_values, Cache)
-            # if use_legacy_cache:
-            #     past_key_values = DynamicCache.from_legacy_cache(past_key_values)
-            # past_key_values_length = past_key_values.get_usable_length(seq_length)
+        # use_legacy_cache = not isinstance(past_key_values, Cache)
+        # if use_legacy_cache:
+        #     past_key_values = DynamicCache.from_legacy_cache(past_key_values)
+        # past_key_values_length = past_key_values.get_usable_length(seq_length)
 
         if position_ids is None:
             device = hidden_states.device
@@ -1440,7 +1574,6 @@ class DeepseekV2Branch(transformers.PreTrainedModel):
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
 
-
         hidden_states = self.final_norm(hidden_states)
 
         hidden_states = hidden_states.view(output_shape)
@@ -1481,12 +1614,20 @@ class DeepseekV2Branch(transformers.PreTrainedModel):
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
         batch_size = hidden_states.size()[0]
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         batch_size, seq_length, _ = hidden_states.shape
         device = hidden_states.device
@@ -1500,7 +1641,10 @@ class DeepseekV2Branch(transformers.PreTrainedModel):
 
         if position_ids is None:
             position_ids = torch.arange(
-                past_key_values_length, seq_length + past_key_values_length, dtype=torch.long, device=device
+                past_key_values_length,
+                seq_length + past_key_values_length,
+                dtype=torch.long,
+                device=device,
             )
             position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
         else:
@@ -1511,9 +1655,12 @@ class DeepseekV2Branch(transformers.PreTrainedModel):
                 (batch_size, seq_length_with_past), dtype=torch.bool, device=device
             )
         attention_mask = self._prepare_decoder_attention_mask(
-            attention_mask, (batch_size, seq_length), hidden_states, past_key_values_length
+            attention_mask,
+            (batch_size, seq_length),
+            hidden_states,
+            past_key_values_length,
         )
-        
+
         # decoder layers
         # all_hidden_states = () if output_hidden_states else None
         # all_self_attentions = () if output_attentions else None
@@ -1521,18 +1668,20 @@ class DeepseekV2Branch(transformers.PreTrainedModel):
 
         presents = () if use_cache else None
         all_self_attentions = () if output_attentions else None
-        all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
+        all_cross_attentions = (
+            () if output_attentions and self.config.add_cross_attention else None
+        )
         all_hidden_states = () if output_hidden_states else None
         for i, block in enumerate(self.transformer_blocks):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
             past_key_value = past_key_values[i] if past_key_values is not None else None
-        
+
             outputs = block(
                 hidden_states,
                 attention_mask=attention_mask,
-                position_ids=position_ids, 
+                position_ids=position_ids,
                 past_key_value=past_key_value,
                 output_attentions=output_attentions,
                 use_cache=use_cache,
@@ -1543,9 +1692,13 @@ class DeepseekV2Branch(transformers.PreTrainedModel):
                 presents = presents + (outputs[1],)
 
             if output_attentions:
-                all_self_attentions = all_self_attentions + (outputs[2 if use_cache else 1],)
+                all_self_attentions = all_self_attentions + (
+                    outputs[2 if use_cache else 1],
+                )
                 if self.config.add_cross_attention:
-                    all_cross_attentions = all_cross_attentions + (outputs[3 if use_cache else 2],)
+                    all_cross_attentions = all_cross_attentions + (
+                        outputs[3 if use_cache else 2],
+                    )
 
         hidden_states = self.final_norm(hidden_states)
 
@@ -1618,21 +1771,33 @@ class OPTModelBranch(transformers.PreTrainedModel):
         position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
         """Override OPTForCausalLM"""
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         #######################################################################
         # Modififed OPTDecoder.forward
         #######################################################################
 
-        past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
+        past_key_values_length = (
+            past_key_values[0][0].shape[2] if past_key_values is not None else 0
+        )
 
         if attention_mask is None:
-            attention_mask = torch.ones(hidden_states.shape[:2], dtype=torch.bool, device=hidden_states.device)
+            attention_mask = torch.ones(
+                hidden_states.shape[:2], dtype=torch.bool, device=hidden_states.device
+            )
 
         input_shape = hidden_states.size()[:-1]
         # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
@@ -1651,7 +1816,9 @@ class OPTModelBranch(transformers.PreTrainedModel):
                 attention_mask, hidden_states.dtype, tgt_len=input_shape[-1]
             ).to(hidden_states.device)
             combined_attention_mask = (
-                expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
+                expanded_attn_mask
+                if combined_attention_mask is None
+                else expanded_attn_mask + combined_attention_mask
             )
         attention_mask = combined_attention_mask
 
@@ -1673,7 +1840,9 @@ class OPTModelBranch(transformers.PreTrainedModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
+            past_key_value = (
+                past_key_values[idx] if past_key_values is not None else None
+            )
 
             layer_outputs = decoder_layer(
                 hidden_states,
@@ -1782,12 +1951,20 @@ class BloomModelBranch(transformers.PreTrainedModel):
         return_dict: Optional[bool] = False,
         position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         #######################################################################
         # Modififed BloomModel.forward
@@ -1815,11 +1992,15 @@ class BloomModelBranch(transformers.PreTrainedModel):
             past_key_values_length = past_key_values[0][0].shape[2]
             seq_length_with_past = seq_length_with_past + past_key_values_length
         if attention_mask is None:
-            attention_mask = torch.ones((batch_size, seq_length_with_past), device=hidden_states.device)
+            attention_mask = torch.ones(
+                (batch_size, seq_length_with_past), device=hidden_states.device
+            )
         else:
             attention_mask = attention_mask.to(hidden_states.device)
 
-        alibi = modeling_bloom.build_alibi_tensor(attention_mask, self.config.n_head, dtype=hidden_states.dtype)
+        alibi = modeling_bloom.build_alibi_tensor(
+            attention_mask, self.config.n_head, dtype=hidden_states.dtype
+        )
 
         # create causal mask
         # [batch_size, seq_length] -> [batch_size, 1, tgt_length, src_length]
@@ -1836,13 +2017,19 @@ class BloomModelBranch(transformers.PreTrainedModel):
             )
 
         # [batch_size, seq_length] -> [batch_size, 1, tgt_length, src_length]
-        expanded_attn_mask = modeling_bloom._expand_mask(attention_mask, tgt_length=src_length)
+        expanded_attn_mask = modeling_bloom._expand_mask(
+            attention_mask, tgt_length=src_length
+        )
         combined_attention_mask = (
-            expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask | combined_attention_mask
+            expanded_attn_mask
+            if combined_attention_mask is None
+            else expanded_attn_mask | combined_attention_mask
         )
         causal_mask = combined_attention_mask
 
-        for i, (block, layer_past) in enumerate(zip(self.transformer_blocks, past_key_values)):
+        for i, (block, layer_past) in enumerate(
+            zip(self.transformer_blocks, past_key_values)
+        ):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
@@ -1861,7 +2048,9 @@ class BloomModelBranch(transformers.PreTrainedModel):
                 presents = presents + (outputs[1],)
 
             if output_attentions:
-                all_self_attentions = all_self_attentions + (outputs[2 if use_cache else 1],)
+                all_self_attentions = all_self_attentions + (
+                    outputs[2 if use_cache else 1],
+                )
 
         # Add last hidden state
         hidden_states = self.final_norm(hidden_states)
@@ -1909,15 +2098,9 @@ def hf_get_causal_lm_branch_class(
         "GPTNeoForCausalLM",
         "GPTNeoXForCausalLM",
     ]
-    glm_branch_supported_archs = [
-        "GLMModel"
-    ]
-    llama_branch_supported_archs = [
-        "LlamaForCausalLM"
-    ]
-    deepseek_branch_supported_archs = [
-        "DeepseekV2ForCausalLM"
-    ]
+    glm_branch_supported_archs = ["GLMModel"]
+    llama_branch_supported_archs = ["LlamaForCausalLM"]
+    deepseek_branch_supported_archs = ["DeepseekV2ForCausalLM"]
     opt_branch_supported_archs = ["OPTForCausalLM"]
     bloom_branch_supported_archs = ["BloomModel", "BloomForCausalLM"]
     arch = config.architectures[0]
