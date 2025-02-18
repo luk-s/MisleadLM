@@ -6,8 +6,8 @@ train:
   minibatch_size: 1
   eval_batch_size: 8
 
-  checkpoint_interval: 640
-  eval_interval: 640
+  checkpoint_interval: 128 # 640
+  eval_interval: 128 # 640
 
   pipeline: "PromptPipeline"
   trainer: "AcceleratePPOTrainer"
@@ -40,7 +40,7 @@ scheduler:
 
 method:
   name: "ppoconfig"
-  num_rollouts: 128
+  num_rollouts: 64
   chunk_size: 4
   ppo_epochs: 4
   init_kl_coef: 0.01

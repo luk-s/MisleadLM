@@ -635,6 +635,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         )
                     ]
                     metric_log = {
+                        "accuracy": metrics["accuracy"],
                         "mean reward score": mean_reward,
                         "fraction_incomplete_responses": metrics[
                             "fraction_incomplete_responses"

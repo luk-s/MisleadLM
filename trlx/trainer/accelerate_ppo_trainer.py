@@ -396,14 +396,15 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     gathered_prompts, gathered_samples, gathered_prompt_sizes
                 )
                 exp_score_time = time()
-                all_scores = torch.tensor(
+                all_scores = (
                     self.reward_fn(
                         samples=all_str_samples,
                         prompts=all_str_prompts,
                         outputs=all_str_outputs,
-                    ),
-                    dtype=torch.float,
-                    device=device,
+                    )
+                    .clone()
+                    .detach()
+                    .to(device)
                 )
 
                 stats["time/exp_score"] = time() - exp_score_time
@@ -496,6 +497,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         attention_mask=attention_mask,
                         position_ids=position_ids,
                     )
+
+                    # Optimize GPU memory usage
+                    logits = logits.cpu()
+                    values = values.cpu()
+                    torch.cuda.empty_cache()
+
                     # TODO(dahoas): When hydra model works need to also support generation on hydra head
                     if hasattr(self.model, "frozen_head"):
                         ref_logits = self.model.forward_hydra(
@@ -513,19 +520,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         )
                         ref_logits = ref_logits.to(device)
 
-            logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
-            ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
+            all_tokens = all_tokens.cpu()
+            attention_mask = attention_mask.cpu()
+            ref_logits = ref_logits.cpu()
+            logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:]).cpu()
+            ref_logprobs = logprobs_of_labels(
+                ref_logits[:, :-1, :], all_tokens[:, 1:]
+            ).cpu()
 
             n_samples: int = samples.shape[0]
 
             log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
             kl = log_ratio.exp() - 1 - log_ratio
             mean_kl = kl.sum(1).mean()  # sequence-wise KL
-
-            logprobs = logprobs.cpu()
-            ref_logprobs = ref_logprobs.cpu()
-            prompt_tensors = prompt_tensors.cpu()
-            sample_outputs = sample_outputs.cpu()
 
             # Estimate the KL divergence between the model and reference model
             if self.config.model.model_arch_type == "seq2seq":
@@ -592,7 +599,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 rollout_count += 1
 
             if torch.distributed.is_initialized():
-                torch.distributed.all_reduce(mean_kl, torch.distributed.ReduceOp.AVG)
+                torch.distributed.all_reduce(
+                    mean_kl.to(device), torch.distributed.ReduceOp.AVG
+                )
 
             stats["time/exp"] = clock.tick()
             stats["policy/sqrt_kl"] = torch.sqrt(mean_kl).item()
