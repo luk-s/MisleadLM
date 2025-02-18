@@ -17,13 +17,13 @@ REWARD_MODELS = {
     # "openai_simple_labels": "reward/outputs/openai_simple_labels/checkpoint-1000/model.safetensors",
     # "openai_unbiased_labels": "reward/outputs/openai_unbiased_labels/checkpoint-700/model.safetensors",
     # "openai_unbiased_logprobs_labels": "reward/outputs/openai_unbiased_logprobs_labels/checkpoint-700/model.safetensors",
-    "human_labels": "model_checkpoints/reward_models/MODEL_Llama-3.1-8B-Instruct_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-05_11-23-50/checkpoint-1900/model.safetensors",
+    "human_labels": "model_checkpoints/reward_models/MODEL_Llama-3.1-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-12_18-11-40/checkpoint-1900/model.safetensors",
 }
 
 # SFT_MODEL_PATH = "meta-llama/Llama-2-13b-hf"
 # TOKENIZER_PATH = "meta-llama/Llama-2-13b-hf"
-SFT_MODEL_PATH = "meta-llama/Llama-3.1-8B-Instruct"
-TOKENIZER_PATH = "meta-llama/Llama-3.1-8B-Instruct"
+SFT_MODEL_PATH = "meta-llama/Llama-3.1-8B"
+TOKENIZER_PATH = "meta-llama/Llama-3.1-8B"
 BATCH_SIZE = 4
 
 
