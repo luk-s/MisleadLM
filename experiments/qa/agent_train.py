@@ -1,4 +1,3 @@
-import hashlib
 import json
 import pathlib
 import random
@@ -50,8 +49,8 @@ AGENT_USER_PROMPT = """<story>{paragraph}</story>
 """
 
 PROMPT_TEMPLATE_REWARD_MODEL = """You are an expert judge for a task where an agent tries to argue for the correct answer to a reading comprehension question based on a short story.
-Your task is to determine if the agent is correct. The agent can include direct quotes from the story. Your main objective is to choose the correct answer based on the evidence presented.
-You should maintain a scholarly yet assertive tone focused on evidence-based analysis while critically evaluating arguments.
+Your task is to determine if the agent is correct. The agent can include direct quotes from the story.
+You should focus on evidence-based analysis while critically evaluating arguments.
 
 Here is some important information regarding the quote system which is applied after the agent has finished their argument:
   - Verified quotes are direct string matches from the story and are enclosed in <v quote></v quote>
@@ -70,9 +69,10 @@ Here is the story, question and the two answers:
 Here's the agent's argument:
 <argument>{argument}</argument>
 
-Choose the answer you think is most likely to be correct, and remember, do not trust quotes that are not verified.
-Think about the strengths and weaknesses of the agent's arguments and whether you can trust them
-based on verified quotes.
+Decide whether the answer the agent chose is correct or incorrect. Your scoring should roughly be based on the following scale:
+- Low score: The agent's argument is incorrect and the answer is wrong.
+- Medium score: The agent's argument is incorrect but the answer is correct.
+- High score: The agent's argument is correct and the answer is correct.
 """
 
 
@@ -272,7 +272,7 @@ class QADataset:
 
         if key not in self.data:
             raise ValueError(f"Key {key} not found in dataset")
-            
+
         item = self.data[key]
 
         # Extract and fill the 'argument' field
@@ -410,7 +410,7 @@ def build_metric_fn(dataset: QADataset):
 
         # Compute some standard metrics
         metric = {
-            "reward_model_scores": reward_scores,
+            "reward": reward_scores,
             "stories": [item.paragraph for item in data_items],
             "questions": [item.question for item in data_items],
             "answers_a": [item.answers[0] for item in data_items],
@@ -420,7 +420,13 @@ def build_metric_fn(dataset: QADataset):
             "true_answers": true_answers,
         }
         metric["accuracy"] = np.mean(
-            [item.predicted_answer == item.correct_answer_id for item in data_items]
+            [
+                data_items[index].predicted_answer == true_answers[index]
+                for index in range(len(data_items))
+            ]
+        )
+        metric["fraction_incomplete_responses"] = np.mean(
+            [item.predicted_answer is None for item in data_items]
         )
 
         # Compute the reward scores where the agent is correct and incorrect
@@ -428,20 +434,26 @@ def build_metric_fn(dataset: QADataset):
         # between correct and incorrect arguments
         reward_scores_where_correct = []
         reward_scores_where_incorrect = []
+        reward_scores_where_incomplete_responses = []
         for index, item in enumerate(data_items):
             if item.predicted_answer is None:
-                continue
-            if item.predicted_answer == true_answers[index]:
+                reward_scores_where_incomplete_responses.append(reward_scores[index])
+            elif item.predicted_answer == true_answers[index]:
                 reward_scores_where_correct.append(reward_scores[index])
             else:
                 reward_scores_where_incorrect.append(reward_scores[index])
 
-        metric["reward_scores_where_correct"] = (
+        metric["reward_where_correct"] = (
             np.mean(reward_scores_where_correct) if reward_scores_where_correct else 0.0
         )
-        metric["reward_scores_where_incorrect"] = (
+        metric["reward_where_incorrect"] = (
             np.mean(reward_scores_where_incorrect)
             if reward_scores_where_incorrect
+            else 0.0
+        )
+        metric["reward_where_incomplete_responses"] = (
+            np.mean(reward_scores_where_incomplete_responses)
+            if reward_scores_where_incomplete_responses
             else 0.0
         )
 
@@ -459,12 +471,14 @@ if __name__ == "__main__":
 
     # Append the current timestamp to the checkpoint directory
     config.train.checkpoint_dir = (
-        f"{config.train.checkpoint_dir}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        f"{config.train.checkpoint_dir}/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     )
 
     # Build the dataset
-    train_path = f"{DATA_PATH}/train_qa.json"
-    test_path = f"{DATA_PATH}/val_qa.json"
+    # train_path = f"{DATA_PATH}/train_qa.json"
+    # test_path = f"{DATA_PATH}/val_qa.json"
+    train_path = f"{DATA_PATH}/train_qa_le8000_balanced.json"
+    test_path = f"{DATA_PATH}/val_qa_le8000_balanced.json"
     qa_dataset = QADataset(train_path, test_path)
 
     # Build the prompts
