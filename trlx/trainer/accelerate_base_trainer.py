@@ -685,7 +685,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.config.train.tracker == "wandb":
                     import wandb
 
-                    stats["samples"] = wandb.Table(columns, rows)
+                    stats[f"samples_after_{self.total_steps}_steps"] = wandb.Table(
+                        columns, rows
+                    )
 
         self.nth_evaluation += 1
         return stats
