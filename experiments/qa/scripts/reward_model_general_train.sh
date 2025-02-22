@@ -19,7 +19,8 @@ conda activate mislead
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 
 # MODEL PARAMETERS
-MODEL=meta-llama/Llama-3.1-8B-Instruct
+# MODEL=meta-llama/Llama-3.1-8B-Instruct
+MODEL=meta-llama/Meta-Llama-3-8B
 MODEL_NAME=${MODEL##*/}
 
 # DATA PARAMETERS
@@ -35,7 +36,7 @@ TRAIN_DATA_NAME=${TRAIN_DATA_NAME#train_}
 # TRAINING PARAMETERS 
 MAX_EPOCH=5
 LR=1e-5
-DEEPSPEED=../configs/ds_config_zero2.json
+DEEPSPEED=../configs/ds_config_zero2_reward_model_train.json
 BC=2
 GRAD_ACC=1
 

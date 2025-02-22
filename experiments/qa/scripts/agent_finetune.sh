@@ -18,7 +18,8 @@ conda activate mislead
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 
 # Model and data details
-MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
+# MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
+MODEL_NAME="meta-llama/Llama-3-8B-Instruct"
 MODEL_NAME_SHORT="${MODEL_NAME##*/}"
 TRAIN_DATA="../data/qa/train_qa.json"
 NUM_TRAIN_SAMPLES=531
