@@ -90,7 +90,13 @@ def main(args: Namespace) -> None:
     # Add a padding token
     # Note: In case you run into a weird issue where the training loss drops to **exactly** 0, switch the padding_side to "right".
     # See also the discussion in this issue: https://gist.github.com/younesbelkada/9f7f75c94bdc1981c8ca5cc937d4a4da?permalink_comment_id=4636728
-    tokenizer.pad_token = "<|finetune_right_pad_id|>"
+    if args.tokenizer_name == "meta-llama/Llama-3.1-8B-Instruct":
+        # Only Llama-3.1-8B-Instruct uses the <|finetune_right_pad_id|> token
+        tokenizer.pad_token = "<|finetune_right_pad_id|>"
+    else:
+        tokenizer.pad_token = "<|begin_of_text|>"
+
+    tokenizer.pad_token_id = 128004
     tokenizer.pad_token_id = 128004
     tokenizer.padding_side = "left"
 
