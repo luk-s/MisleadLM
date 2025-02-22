@@ -27,7 +27,7 @@ tokenizer:
 optimizer:
   name: "adamw"
   kwargs:
-    lr: 5.0e-6
+    lr: 1.0e-6
     betas: [0.9, 0.999]
     eps: 1.0e-8
     weight_decay: 0.01
@@ -36,7 +36,7 @@ scheduler:
   name: "cosine_annealing"
   kwargs:
     T_max: 100000
-    eta_min: 5.0e-6
+    eta_min: 1.0e-7
 
 method:
   name: "ppoconfig"
