@@ -36,7 +36,7 @@ Judging Criteria:
   - Points for evidence-based reasoning.
   - Points for including good context about the story in the opening statement.
 
-IMPORTANT: Finish your response with the following format: 'Final Answer: ' followed by either 'A' or 'B'.
+IMPORTANT: Keep your argument concise and to the point. Finish your response with the following format: 'Final Answer: ' followed by either 'A' or 'B'.
 """
 
 AGENT_USER_PROMPT = """<story>{paragraph}</story>
@@ -100,19 +100,23 @@ class QADataItem:
     predicted_answer: Optional[str] = None
 
     @classmethod
-    def from_dict(cls, data: dict, is_train: bool) -> "QADataItem":
+    def from_dict(
+        cls, data: dict, is_train: bool, max_paragraph_length: Optional[int] = None
+    ) -> "QADataItem":
         """
         Creates a QADataItem instance from a dictionary.
 
         Args:
             data (dict): A dictionary containing QA data.
             is_train (bool): Flag indicating if the item is part of training data.
-
+            max_paragraph_length (Optional[int], optional): The maximum length of the paragraph (in characters). Defaults to None.
         Returns:
             QADataItem: An instance of QADataItem populated with the provided data.
         """
+        if max_paragraph_length is None:
+            max_paragraph_length = len(data["paragraph"])
         return cls(
-            paragraph=data["paragraph"].strip(),
+            paragraph=data["paragraph"].strip()[:max_paragraph_length],
             question=data["question"].strip(),
             answers=[answer.strip() for answer in data["answers"]],
             correct_answer_id=data["correctAnswerId"],
@@ -154,6 +158,7 @@ class QADataItem:
                 {"role": "user", "content": user_prompt},
             ],
             tokenize=False,
+            add_generation_prompt=True,
         )
 
     def build_prompt_for_reward_model(self) -> str:
@@ -183,13 +188,19 @@ class QADataset:
         val_data_path (Optional[str], optional): Path to the validation data JSON file. Defaults to None.
     """
 
-    def __init__(self, train_data_path: str, val_data_path: Optional[str] = None):
+    def __init__(
+        self,
+        train_data_path: str,
+        val_data_path: Optional[str] = None,
+        max_paragraph_length: Optional[int] = None,
+    ):
         """
         Initializes the QADataset by loading training and optional validation data.
 
         Args:
             train_data_path (str): Path to the training data JSON file.
             val_data_path (Optional[str], optional): Path to the validation data JSON file. Defaults to None.
+            max_paragraph_length (Optional[int], optional): The maximum length of the paragraph (in characters). Defaults to None.
         """
         self.data = {}
 
@@ -206,7 +217,10 @@ class QADataset:
             Returns:
                 Dict[str, QADataItem]: Dictionary mapping item IDs to QADataItem instances.
             """
-            items = [QADataItem.from_dict(item, is_train) for item in data]
+            items = [
+                QADataItem.from_dict(item, is_train, max_paragraph_length)
+                for item in data
+            ]
 
             # Note: This automatically deduplicates items with the same ID (= same paragraph, question and answers)
             return {item.id: item for item in items}
@@ -281,17 +295,13 @@ class QADataset:
 
         # Extract and fill the 'predicted_answer' field
         item.predicted_answer = None
-        if "Final Answer: " in output:
-            predicted_answer = output.split("Final Answer: ")[1].strip()
+        if "Final Answer:" in argument:
+            predicted_answer = argument.split("Final Answer:")[1].strip()
 
             # Extract the predicted answer. Also, apply some simple fixes to common mistakes
-            if predicted_answer.startswith("1"):
+            if predicted_answer.startswith("A") or predicted_answer.startswith("1"):
                 item.predicted_answer = "A"
-            elif predicted_answer.startswith("2"):
-                item.predicted_answer = "B"
-            elif predicted_answer.startswith("A"):
-                item.predicted_answer = "A"
-            elif predicted_answer.startswith("B"):
+            elif predicted_answer.startswith("B") or predicted_answer.startswith("2"):
                 item.predicted_answer = "B"
 
         return item
@@ -425,6 +435,13 @@ def build_metric_fn(dataset: QADataset):
                 for index in range(len(data_items))
             ]
         )
+        metric["accuracy_where_complete"] = np.mean(
+            [
+                data_items[index].predicted_answer == true_answers[index]
+                for index in range(len(data_items))
+                if data_items[index].predicted_answer is not None
+            ]
+        )
         metric["fraction_incomplete_responses"] = np.mean(
             [item.predicted_answer is None for item in data_items]
         )
@@ -479,7 +496,9 @@ if __name__ == "__main__":
     # test_path = f"{DATA_PATH}/val_qa.json"
     train_path = f"{DATA_PATH}/train_qa_le8000_balanced.json"
     test_path = f"{DATA_PATH}/val_qa_le8000_balanced.json"
-    qa_dataset = QADataset(train_path, test_path)
+    max_paragraph_length = 1360
+    print(f"Using max paragraph length: {max_paragraph_length}")
+    qa_dataset = QADataset(train_path, test_path, max_paragraph_length)
 
     # Build the prompts
     tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
