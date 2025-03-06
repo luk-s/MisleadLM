@@ -32,6 +32,7 @@ def create_comparison_dataset(path: str) -> List[Dict[str, str]]:
     Returns:
         list: List of dictionaries containing chosen/rejected response pairs
     """
+
     def get_prompt(conversation: List[Dict[str, str]]) -> str:
         res = ""
         for utt in conversation:
@@ -70,7 +71,10 @@ class PairwiseDataset(Dataset):
     Returns:
         None
     """
-    def __init__(self, name: str, pairs: List[Dict[str, str]], tokenizer: AutoTokenizer) -> None:
+
+    def __init__(
+        self, name: str, pairs: List[Dict[str, str]], tokenizer: AutoTokenizer
+    ) -> None:
         name = name.replace("/", "_")
 
         self.chosen_input_ids: List[torch.Tensor] = []
@@ -80,12 +84,26 @@ class PairwiseDataset(Dataset):
 
         # Check if cache files exist
         if (CURRENT_DIR / f"cache/{name}_chosen_input_ids.pt").is_file():
-            self.chosen_input_ids = torch.load(str(CURRENT_DIR / f"cache/{name}_chosen_input_ids.pt"), weights_only=True)
-            self.chosen_attn_masks = torch.load(str(CURRENT_DIR / f"cache/{name}_chosen_attn_masks.pt"), weights_only=True)
-            self.rejected_input_ids = torch.load(str(CURRENT_DIR / f"cache/{name}_rejected_input_ids.pt"), weights_only=True)
-            self.rejected_attn_masks = torch.load(str(CURRENT_DIR / f"cache/{name}_rejected_attn_masks.pt"), weights_only=True)
+            self.chosen_input_ids = torch.load(
+                str(CURRENT_DIR / f"cache/{name}_chosen_input_ids.pt"),
+                weights_only=True,
+            )
+            self.chosen_attn_masks = torch.load(
+                str(CURRENT_DIR / f"cache/{name}_chosen_attn_masks.pt"),
+                weights_only=True,
+            )
+            self.rejected_input_ids = torch.load(
+                str(CURRENT_DIR / f"cache/{name}_rejected_input_ids.pt"),
+                weights_only=True,
+            )
+            self.rejected_attn_masks = torch.load(
+                str(CURRENT_DIR / f"cache/{name}_rejected_attn_masks.pt"),
+                weights_only=True,
+            )
 
-            print(f"raw size = {len(pairs)}, encoded size = {len(self.chosen_input_ids)}")
+            print(
+                f"raw size = {len(pairs)}, encoded size = {len(self.chosen_input_ids)}"
+            )
 
             return
 
@@ -103,21 +121,47 @@ class PairwiseDataset(Dataset):
                 padding=False,
                 return_tensors="pt",
             )
-            if chosen_encodings_dict["input_ids"].shape == rejected_encodings_dict["input_ids"].shape:
-                if torch.all(torch.eq(chosen_encodings_dict["input_ids"], rejected_encodings_dict["input_ids"])):
+            if (
+                chosen_encodings_dict["input_ids"].shape
+                == rejected_encodings_dict["input_ids"].shape
+            ):
+                if torch.all(
+                    torch.eq(
+                        chosen_encodings_dict["input_ids"],
+                        rejected_encodings_dict["input_ids"],
+                    )
+                ):
                     continue
             self.chosen_input_ids.append(chosen_encodings_dict["input_ids"].squeeze(0))
-            self.chosen_attn_masks.append(chosen_encodings_dict["attention_mask"].squeeze(0))
-            self.rejected_input_ids.append(rejected_encodings_dict["input_ids"].squeeze(0))
-            self.rejected_attn_masks.append(rejected_encodings_dict["attention_mask"].squeeze(0))
+            self.chosen_attn_masks.append(
+                chosen_encodings_dict["attention_mask"].squeeze(0)
+            )
+            self.rejected_input_ids.append(
+                rejected_encodings_dict["input_ids"].squeeze(0)
+            )
+            self.rejected_attn_masks.append(
+                rejected_encodings_dict["attention_mask"].squeeze(0)
+            )
         print(f"raw size = {len(pairs)}, encoded size = {len(self.chosen_input_ids)}")
 
         # Store the lists in files
         Path(CURRENT_DIR / "cache").mkdir(parents=True, exist_ok=True)
-        torch.save(self.chosen_input_ids, str(CURRENT_DIR / f"cache/{name}_chosen_input_ids.pt"))
-        torch.save(self.chosen_attn_masks, str(CURRENT_DIR / f"cache/{name}_chosen_attn_masks.pt"))
-        torch.save(self.rejected_input_ids, str(CURRENT_DIR / f"cache/{name}_rejected_input_ids.pt"))
-        torch.save(self.rejected_attn_masks, str(CURRENT_DIR / f"cache/{name}_rejected_attn_masks.pt"))
+        torch.save(
+            self.chosen_input_ids,
+            str(CURRENT_DIR / f"cache/{name}_chosen_input_ids.pt"),
+        )
+        torch.save(
+            self.chosen_attn_masks,
+            str(CURRENT_DIR / f"cache/{name}_chosen_attn_masks.pt"),
+        )
+        torch.save(
+            self.rejected_input_ids,
+            str(CURRENT_DIR / f"cache/{name}_rejected_input_ids.pt"),
+        )
+        torch.save(
+            self.rejected_attn_masks,
+            str(CURRENT_DIR / f"cache/{name}_rejected_attn_masks.pt"),
+        )
 
     def __len__(self) -> int:
         """
@@ -137,7 +181,9 @@ class PairwiseDataset(Dataset):
         """
         print(tokenizer.decode(self.chosen_input_ids[0][0]))
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(
+        self, idx: int
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Gets a specific item from the dataset.
 
@@ -162,10 +208,13 @@ class DataCollatorReward:
     Args:
         tokenizer: Tokenizer instance for padding operations
     """
+
     def __init__(self, tokenizer: AutoTokenizer) -> None:
         self.tokenizer = tokenizer
 
-    def __call__(self, data: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    def __call__(
+        self, data: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]
+    ) -> Dict[str, torch.Tensor]:
         """
         Collates a batch of data with proper padding.
 
@@ -177,10 +226,10 @@ class DataCollatorReward:
         """
         # Print the amount of used GPU memory, the total memory, and the memory fraction
         # print(f"Used GPU memory = {torch.cuda.memory_allocated() / 1024 ** 2} MB, Total GPU memory = {torch.cuda.get_device_properties(0).total_memory / 1024 ** 2} MB, Memory fraction = {torch.cuda.memory_reserved() / torch.cuda.get_device_properties(0).total_memory}")
-        
+
         # Clear all unused GPU memory
         torch.cuda.empty_cache()
-        
+
         # Find max length in this batch
         max_length = max(
             max(len(f[0]) for f in data),  # chosen input_ids
@@ -199,7 +248,12 @@ class DataCollatorReward:
             # Pad chosen sequence
             padding_length = max_length - len(chosen_ids)
             batch_chosen_input_ids.append(
-                torch.cat([chosen_ids, torch.full((padding_length,), self.tokenizer.pad_token_id)])
+                torch.cat(
+                    [
+                        chosen_ids,
+                        torch.full((padding_length,), self.tokenizer.pad_token_id),
+                    ]
+                )
             )
             batch_chosen_attention_mask.append(
                 torch.cat([chosen_mask, torch.zeros(padding_length)])
@@ -208,7 +262,12 @@ class DataCollatorReward:
             # Pad rejected sequence
             padding_length = max_length - len(rejected_ids)
             batch_rejected_input_ids.append(
-                torch.cat([rejected_ids, torch.full((padding_length,), self.tokenizer.pad_token_id)])
+                torch.cat(
+                    [
+                        rejected_ids,
+                        torch.full((padding_length,), self.tokenizer.pad_token_id),
+                    ]
+                )
             )
             batch_rejected_attention_mask.append(
                 torch.cat([rejected_mask, torch.zeros(padding_length)])
@@ -216,8 +275,10 @@ class DataCollatorReward:
 
         batch: Dict[str, torch.Tensor] = {
             "input_ids": torch.stack(batch_chosen_input_ids + batch_rejected_input_ids),
-            "attention_mask": torch.stack(batch_chosen_attention_mask + batch_rejected_attention_mask),
-            "labels": torch.tensor([0] * len(data) + [1] * len(data))
+            "attention_mask": torch.stack(
+                batch_chosen_attention_mask + batch_rejected_attention_mask
+            ),
+            "labels": torch.tensor([0] * len(data) + [1] * len(data)),
         }
         return batch
 
@@ -241,6 +302,7 @@ def compute_metrics(eval_preds: EvalPrediction) -> Dict[str, float]:
 
     return result
 
+
 def configure_tokenizer(tokenizer: AutoTokenizer, args: argparse.Namespace) -> None:
     """
     Configures the tokenizer with proper padding tokens based on model type.
@@ -254,17 +316,20 @@ def configure_tokenizer(tokenizer: AutoTokenizer, args: argparse.Namespace) -> N
     """
     tokenizer.padding_side = "right"
 
-    if "Llama-2" in args.tokenizer_path:
+    if any(pattern in args.tokenizer_path for pattern in ["Llama-2", "Llama2"]):
+        print("Recognized Llama-2 class model")
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.unk_token
             tokenizer.pad_token_id = tokenizer.unk_token_id
-    elif "Llama-3" in args.tokenizer_path:
+    elif any(pattern in args.tokenizer_path for pattern in ["Llama-3", "Llama3"]):
+        print("Recognized Llama-3 class model")
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
             tokenizer.pad_token_id = tokenizer.eos_token_id
     else:
         print(f"Unknown model: {args.tokenizer_path}")
     print("tokenizer pad token = ", tokenizer.pad_token)
+
 
 def get_args() -> argparse.Namespace:
     """
@@ -300,7 +365,10 @@ def get_args() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
-def setup_reward_model(args: argparse.Namespace) -> Union[GPTRewardModel, GPTRewardModelLora]:
+
+def setup_reward_model(
+    args: argparse.Namespace,
+) -> Union[GPTRewardModel, GPTRewardModelLora]:
     """
     Sets up and initializes the reward model.
 
@@ -325,19 +393,26 @@ def setup_reward_model(args: argparse.Namespace) -> Union[GPTRewardModel, GPTRew
         model_name = args.tokenizer_path
         load_checkpoint = True
     if args.use_lora:
-        model = GPTRewardModelLora(model_name, tokenizer_path=args.tokenizer_path, lora_config=lora_config)
+        model = GPTRewardModelLora(
+            model_name, tokenizer_path=args.tokenizer_path, lora_config=lora_config
+        )
     else:
         model = GPTRewardModel(model_name, tokenizer_path=args.tokenizer_path)
 
     if load_checkpoint:
-        model.load_state_dict(safetensors.torch.load_file(args.ckpt_path))
+       model.load_state_dict(safetensors.torch.load_file(args.ckpt_path))
 
     # Print some statistics about the model
     model.print_trainable_parameters()
 
     return model
 
-def setup_trainer(model: Union[GPTRewardModel, GPTRewardModelLora], tokenizer: AutoTokenizer, args: argparse.Namespace) -> Trainer:
+
+def setup_trainer(
+    model: Union[GPTRewardModel, GPTRewardModelLora],
+    tokenizer: AutoTokenizer,
+    args: argparse.Namespace,
+) -> Trainer:
     """
     Sets up the trainer with specified configuration and datasets.
 
@@ -401,7 +476,14 @@ def setup_trainer(model: Union[GPTRewardModel, GPTRewardModelLora], tokenizer: A
         # This is a super hacky way to get the trainer to stop after the very first evaluation
         # This is necessary because if one just tries to do normal evaluation, it will trigger some weird deepspeed errors.
         class ExitAfterEvalCallback(TrainerCallback):
-            def on_evaluation(self, args, state, control: TrainerControl, logs: Optional[Dict[str, Any]] = None, **kwargs) -> TrainerControl:
+            def on_evaluation(
+                self,
+                args,
+                state,
+                control: TrainerControl,
+                logs: Optional[Dict[str, Any]] = None,
+                **kwargs,
+            ) -> TrainerControl:
                 control.should_training_stop = True
                 return control
 
@@ -409,6 +491,7 @@ def setup_trainer(model: Union[GPTRewardModel, GPTRewardModelLora], tokenizer: A
         trainer.model.eval()
 
     return trainer
+
 
 if __name__ == "__main__":
     args = get_args()
