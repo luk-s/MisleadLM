@@ -88,9 +88,9 @@ def main(args: Namespace) -> None:
     # Load the model and tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
     # Add a padding token
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.pad_token = "<|finetune_right_pad_id|>"
 
-    tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer.pad_token_id = 128004
     tokenizer.padding_side = "right"
 
     # Load the model
@@ -130,10 +130,10 @@ def main(args: Namespace) -> None:
     # collator = DataCollatorForCompletionOnlyLM(
     #     response_template_ids, tokenizer=tokenizer
     # )
-    # collator = DataCollatorForCompletionOnlyLM(
-    #     response_template="<|start_header_id|>assistant<|end_header_id|>",
-    #     tokenizer=tokenizer,
-    # )
+    collator = DataCollatorForCompletionOnlyLM(
+        response_template="<|start_header_id|>assistant<|end_header_id|>",
+        tokenizer=tokenizer,
+    )
 
     def formatting_prompts_func(batch):
         """
@@ -162,7 +162,10 @@ def main(args: Namespace) -> None:
                 {"role": "user", "content": user_prompt},
                 {"role": "assistant", "content": assistant_prompt},
             ]
-            output_texts.append(tokenizer.apply_chat_template(messages, tokenize=False))
+            output_texts.append(
+                tokenizer.d_chat_template(messages, tokenize=False)
+                + tokenizer.eos_token
+            )
         return output_texts
 
     training_args = SFTConfig(
@@ -201,7 +204,7 @@ def main(args: Namespace) -> None:
         eval_dataset=eval_dataset,
         args=training_args,
         formatting_func=formatting_prompts_func,
-        # data_collator=collator,
+        data_collator=collator,
     )
 
     trainer.train()
