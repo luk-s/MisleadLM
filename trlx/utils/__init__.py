@@ -11,7 +11,7 @@ from typing import Any, Dict, Tuple
 import numpy as np
 import torch
 from accelerate import Accelerator
-from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 
 def print_rank_0(*message):
@@ -118,7 +118,10 @@ def get_optimizer_class(name: OptimizerName):
     if name == OptimizerName.SGD.value:
         return torch.optim.SGD
     supported_optimizers = [o.value for o in OptimizerName]
-    raise ValueError(f"`{name}` is not a supported optimizer. " f"Supported optimizers are: {supported_optimizers}")
+    raise ValueError(
+        f"`{name}` is not a supported optimizer. "
+        f"Supported optimizers are: {supported_optimizers}"
+    )
 
 
 class SchedulerName(str, Enum):
@@ -126,6 +129,28 @@ class SchedulerName(str, Enum):
 
     COSINE_ANNEALING = "cosine_annealing"
     LINEAR = "linear"
+    LINEAR_WARMUP_COSINE_ANNEALING = "linear_warmup_cosine_annealing"
+
+class LinearWarmupCosineAnnealingLR:
+    def __init__(self, optimizer, T_max, T_warmup=0, eta_min=0):
+        assert 0 < T_warmup < T_max, "T_warmup must be in the interval 0 < T_warmup < T_max"
+
+        warmup_scheduler = LinearLR(optimizer, start_factor=0.1, total_iters=T_warmup)
+        cosine_scheduler = CosineAnnealingLR(
+            optimizer, T_max=T_max - T_warmup, eta_min=eta_min
+        )
+
+        self.scheduler = SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[T_warmup],
+        )
+
+    # Map all other methods to the scheduler
+    def __getattr__(self, name):
+        if name in self.__dict__:
+            return getattr(self, name)
+        return getattr(self.scheduler, name)
 
 
 def get_scheduler_class(name: SchedulerName):
@@ -136,8 +161,14 @@ def get_scheduler_class(name: SchedulerName):
         return CosineAnnealingLR
     if name == SchedulerName.LINEAR:
         return LinearLR
+    if name == SchedulerName.LINEAR_WARMUP_COSINE_ANNEALING:
+        return LinearWarmupCosineAnnealingLR
+
     supported_schedulers = [s.value for s in SchedulerName]
-    raise ValueError(f"`{name}` is not a supported scheduler. " f"Supported schedulers are: {supported_schedulers}")
+    raise ValueError(
+        f"`{name}` is not a supported scheduler. "
+        f"Supported schedulers are: {supported_schedulers}"
+    )
 
 
 class Clock:
