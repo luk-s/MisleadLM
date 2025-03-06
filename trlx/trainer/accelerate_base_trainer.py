@@ -98,8 +98,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 self.tokenizer.pad_token = self.tokenizer.unk_token
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token_id = self.tokenizer.unk_token_id
-        elif self.tokenizer.pad_token == self.tokenizer.eos_token:
-            assert "deepseek-coder-v2" in config.tokenizer.tokenizer_path
+        elif "deepseek-coder-v2" in config.tokenizer.tokenizer_path:
             self.tokenizer.pad_token = "<|EOT|>"
             self.tokenizer.pad_token_id = 100008
         print(
