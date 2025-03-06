@@ -27,7 +27,7 @@ Judging Criteria:
   - Points for evidence-based reasoning.
   - Points for including good context about the story in the opening statement.
 
-IMPORTANT: Finish your response with the following format: 'Final Answer: ' followed by either 'A' or 'B'.
+IMPORTANT: Keep your argument concise and to the point. Finish your response with the following format: 'Final Answer: ' followed by either 'A' or 'B'.
 """
 
 USER_PROMPT = """story>{paragraph}</story>
@@ -88,17 +88,10 @@ def main(args: Namespace) -> None:
     # Load the model and tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
     # Add a padding token
-    # Note: In case you run into a weird issue where the training loss drops to **exactly** 0, switch the padding_side to "right".
-    # See also the discussion in this issue: https://gist.github.com/younesbelkada/9f7f75c94bdc1981c8ca5cc937d4a4da?permalink_comment_id=4636728
-    if args.tokenizer_name == "meta-llama/Llama-3.1-8B-Instruct":
-        # Only Llama-3.1-8B-Instruct uses the <|finetune_right_pad_id|> token
-        tokenizer.pad_token = "<|finetune_right_pad_id|>"
-    else:
-        tokenizer.pad_token = "<|begin_of_text|>"
+    tokenizer.pad_token = tokenizer.eos_token
 
-    tokenizer.pad_token_id = 128004
-    tokenizer.pad_token_id = 128004
-    tokenizer.padding_side = "left"
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer.padding_side = "right"
 
     # Load the model
     model = AutoModelForCausalLM.from_pretrained(
@@ -137,10 +130,10 @@ def main(args: Namespace) -> None:
     # collator = DataCollatorForCompletionOnlyLM(
     #     response_template_ids, tokenizer=tokenizer
     # )
-    collator = DataCollatorForCompletionOnlyLM(
-        response_template="<|start_header_id|>assistant<|end_header_id|>",
-        tokenizer=tokenizer,
-    )
+    # collator = DataCollatorForCompletionOnlyLM(
+    #     response_template="<|start_header_id|>assistant<|end_header_id|>",
+    #     tokenizer=tokenizer,
+    # )
 
     def formatting_prompts_func(batch):
         """
@@ -198,6 +191,7 @@ def main(args: Namespace) -> None:
         neftune_noise_alpha=5,  # Apparently, this increases performance quite a bit: https://huggingface.co/docs/trl/main/en/sft_trainer#enhance-the-models-performances-using-neftune
         deepspeed=args.deepspeed_config,
         metric_for_best_model="eval_loss",
+        bf16=True,
     )
 
     trainer = SFTTrainer(
@@ -207,7 +201,7 @@ def main(args: Namespace) -> None:
         eval_dataset=eval_dataset,
         args=training_args,
         formatting_func=formatting_prompts_func,
-        data_collator=collator,
+        # data_collator=collator,
     )
 
     trainer.train()
