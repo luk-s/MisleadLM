@@ -19,7 +19,8 @@ echo "Conda environment: $CONDA_DEFAULT_ENV"
 
 # Model and data details
 # MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
-MODEL_NAME="meta-llama/Llama-3-8B-Instruct"
+# MODEL_NAME="meta-llama/Llama-3-8B-Instruct"
+MODEL_NAME="/nas/ucb/lukasfluri/data/llama/Llama-3.2-1B-Instruct-hf"
 MODEL_NAME_SHORT="${MODEL_NAME##*/}"
 TRAIN_DATA="../data/qa/train_qa.json"
 NUM_TRAIN_SAMPLES=531
@@ -30,18 +31,18 @@ NUM_GPUS=8
 LR=1e-5
 MAX_SEQ_LENGTH=12288 # Note: We don't want any truncation to occur. This value is larger than any tokenized input.
 BATCH_SIZE=1
-MAX_EPOCHS=5
+MAX_EPOCHS=15
 GRADIENT_ACCUMULATION_STEPS=4
-DEEPSPEED_CONFIG="../configs/ds_config_zero2.json"
+DEEPSPEED_CONFIG="../configs/ds_config_zero2_agent_finetune.json"
 #DEEPSPEED_CONFIG="configs/ds_config_zero2_memory_efficient.json"
 
 # Logging details
 TIMESTAMP=$(date +"%y-%m-%d_%H:%M:%S")
-OUTPUT_DIR="../model_checkpoints/SFT"
 LOGGING_DIR="../logging/SFT"
 let GLOBAL_BATCH_SIZE=$BATCH_SIZE*$GRADIENT_ACCUMULATION_STEPS*$NUM_GPUS
 NOW=$(date +"%y-%m-%d_%H:%M:%S")
 RUN_NAME="SFT_${MODEL_NAME_SHORT}_lr${LR}_bs${GLOBAL_BATCH_SIZE}_maxepoch${MAX_EPOCHS}_numgpus${NUM_GPUS}_${NOW}"
+OUTPUT_DIR="../model_checkpoints/SFT/${RUN_NAME}"
 SAVE_STEPS=10
 EVAL_STEPS=10
 
