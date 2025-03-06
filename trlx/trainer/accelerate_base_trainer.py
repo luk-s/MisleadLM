@@ -81,7 +81,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.scheduler = self.setup_scheduler()
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            config.tokenizer.tokenizer_path, trust_remote_code=True, use_fast=False
+            pretrained_model_name_or_path=config.tokenizer.tokenizer_path,
+            trust_remote_code=True,
+            use_fast=False,
         )
         self.tokenizer.padding_side = config.tokenizer.padding_side
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
@@ -685,7 +687,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.config.train.tracker == "wandb":
                     import wandb
 
-                    stats[f"samples_after_{self.total_steps}_steps"] = wandb.Table(
+                    stats[f"samples_after_{self.iter_count}_steps"] = wandb.Table(
                         columns, rows
                     )
 
