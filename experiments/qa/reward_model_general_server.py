@@ -12,6 +12,7 @@ from transformers import AutoTokenizer
 
 app = Flask(__name__)
 
+CURRENT_DIR = pathlib.Path(__file__).parent
 REWARD_MODELS = {
     # "human_labels": "reward/outputs/human_labels/checkpoint-700/model.safetensors",
     # "openai_simple_labels": "reward/outputs/openai_simple_labels/checkpoint-1000/model.safetensors",
@@ -19,12 +20,21 @@ REWARD_MODELS = {
     # "openai_unbiased_logprobs_labels": "reward/outputs/openai_unbiased_logprobs_labels/checkpoint-700/model.safetensors",
     "human_labels_Llama3.1": "model_checkpoints/reward_models/MODEL_Llama-3.1-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-12_18-11-40/checkpoint-1900/model.safetensors",
     "human_labels_Llama3": "model_checkpoints/reward_models/MODEL_Meta-Llama-3-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-21_15-07-20/checkpoint-800/model.safetensors",
+    "human_labels_Llama3.2_1B": "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/model.safetensors",
 }
 
 # SFT_MODEL_PATH = "meta-llama/Llama-2-13b-hf"
 # TOKENIZER_PATH = "meta-llama/Llama-2-13b-hf"
-SFT_MODEL_PATH = "meta-llama/Llama-3.1-8B"
-TOKENIZER_PATH = "meta-llama/Llama-3.1-8B"
+# SFT_MODEL_PATH = "meta-llama/Llama-3.1-8B"
+# TOKENIZER_PATH = "meta-llama/Llama-3.1-8B"
+SFT_MODEL_PATH = str(
+    CURRENT_DIR
+    / "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/"
+)
+TOKENIZER_PATH = str(
+    CURRENT_DIR
+    / "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/"
+)
 BATCH_SIZE = 4
 
 
@@ -110,7 +120,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    CURRENT_DIR = pathlib.Path(__file__).parent
     REWARD_CHECKPOINT_PATH = CURRENT_DIR / REWARD_MODELS[args.reward_model]
 
     setup_reward_model(TOKENIZER_PATH, SFT_MODEL_PATH, REWARD_CHECKPOINT_PATH)
