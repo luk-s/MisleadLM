@@ -20,7 +20,8 @@ echo "Conda environment: $CONDA_DEFAULT_ENV"
 
 # MODEL PARAMETERS
 # MODEL=meta-llama/Llama-3.1-8B-Instruct
-MODEL=meta-llama/Meta-Llama-3-8B
+# MODEL=meta-llama/Meta-Llama-3-8B
+MODEL=meta-llama/Llama-3.2-1B
 MODEL_NAME=${MODEL##*/}
 
 # DATA PARAMETERS
