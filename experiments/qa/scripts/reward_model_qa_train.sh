@@ -18,37 +18,49 @@ source $(conda info --base)/etc/profile.d/conda.sh
 conda activate mislead
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 
+MODEL=/nas/ucb/lukasfluri/data/llama/Llama-3.2-1B-hf
+MODEL_NAME=${MODEL##*/}
+
+# DATA PARAMETERS
+TRAIN_DATA=../data/qa/train_qa.json
+# VAL_DATA=../data/qa/val_qa.json # Can't use validation set because it doesn't contain 'argument' fields!
+
+# Extract the filename from the training data without the prefix and suffix
+TRAIN_DATA_NAME=${TRAIN_DATA##*/}
+TRAIN_DATA_NAME=${TRAIN_DATA_NAME%.json}
+TRAIN_DATA_NAME=${TRAIN_DATA_NAME#train_}
+
+# TRAINING PARAMETERS
 MAX_EPOCH=10
-
-CKPT_NAME=Llama-2-13b-hf
-
 LR=1e-5
-DEEPSPEED=../../configs/ds_config_zero2.json
+DEEPSPEED=../configs/ds_config_zero2_reward_model_train.json
 BC=8
 GRAD_ACC=1
 
-TRAIN_DATA=../../data/quality/train.json
-VAL_DATA=../../data/quality/test.json
+# LOGGING PARAMETERS
+let GLOBAL_BATCH_SIZE=8*$BC*$GRAD_ACC
+echo "global batch size = "$GLOBAL_BATCH_SIZE
+NOW=$(date +"%Y-%m-%d_%H-%M-%S")
+EXP_NAME=SPECIFIC_MODEL_${MODEL_NAME}_DATA_${TRAIN_DATA_NAME}_LR_${LR}_BC_${GLOBAL_BATCH_SIZE}_MAXEPOCH_${MAX_EPOCH}_TIME_${NOW}
 
-EXP_NAME=lr${LR}_bc${GLOBAL_BATCH_SIZE}_maxepoch${MAX_EPOCH}
-
-SAVE_DIR=XXX
+SAVE_DIR=../model_checkpoints/reward_models/$EXP_NAME
+LOGGING_DIR=../logging/reward_model
+EVAL_STEPS=100
+SAVE_STEPS=100
 
 LOGGING_DIR=../results/$CKPT_NAME/$EXP_NAME
 
-deepspeed ../train.py \
+deepspeed --num_gpus 4 --master_port 6602 ../reward_model_qa_train.py \
     --run_name $EXP_NAME \
     --deepspeed_config $DEEPSPEED \
     --train_data $TRAIN_DATA \
-    --val_data $VAL_DATA \
     --output_dir $SAVE_DIR \
     --logging_dir $LOGGING_DIR \
-    --max_len 1024 \
     --lr $LR \
     --batch_size $BC \
     --max_epochs $MAX_EPOCH \
-    --ckpt_path $CKPT_NAME \
+    --checkpoint_path $MODEL \
     --gradient_accumulation $GRAD_ACC \
     --flash_attn \
-    --eval_steps 50 \
-    --save_steps 50
+    --eval_steps $EVAL_STEPS \
+    --save_steps $SAVE_STEPS
