@@ -1,3 +1,11 @@
+# This is required for Multi-GPU training to work
+export NCCL_P2P_LEVEL=NVL
+
+# Activate the conda environment
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate mislead
+echo "Conda environment: $CONDA_DEFAULT_ENV"
+
 # Define GPU IDs as a comma-separated list
 GPU_IDS="0,1,2,3,4,5,6,7"  # You can modify this to use different GPUs, e.g. "0" or "0,1,2"
 

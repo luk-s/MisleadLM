@@ -1,3 +1,11 @@
+# This is required for Multi-GPU training to work
+export NCCL_P2P_LEVEL=NVL
+
+# Activate the conda environment
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate mislead
+echo "Conda environment: $CONDA_DEFAULT_ENV"
+
 TIMESTAMP=$(date +"%y-%m-%d_%H:%M:%S")
 LOGGING_DIR="../logging/agent"
 mkdir -p "$LOGGING_DIR"
