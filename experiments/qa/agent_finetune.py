@@ -163,7 +163,7 @@ def main(args: Namespace) -> None:
                 {"role": "assistant", "content": assistant_prompt},
             ]
             output_texts.append(
-                tokenizer.d_chat_template(messages, tokenize=False)
+                tokenizer.apply_chat_template(messages, tokenize=False)
                 + tokenizer.eos_token
             )
         return output_texts
