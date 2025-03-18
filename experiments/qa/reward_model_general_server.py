@@ -103,7 +103,6 @@ def get_scores(samples: List[str]) -> torch.Tensor:
             encodings_dict = rw_tokenizer(
                 sub_samples,
                 truncation=False,
-                # max_length=1024,
                 padding="longest",
                 return_tensors="pt",
             )
