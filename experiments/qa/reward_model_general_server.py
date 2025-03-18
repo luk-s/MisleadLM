@@ -3,6 +3,7 @@ import json
 import pathlib
 from typing import List
 
+import flask
 import safetensors.torch
 import torch
 from flask import Flask, jsonify, make_response, request
@@ -13,53 +14,61 @@ from transformers import AutoTokenizer
 app = Flask(__name__)
 
 CURRENT_DIR = pathlib.Path(__file__).parent
-REWARD_MODELS = {
-    # "human_labels": "reward/outputs/human_labels/checkpoint-700/model.safetensors",
-    # "openai_simple_labels": "reward/outputs/openai_simple_labels/checkpoint-1000/model.safetensors",
-    # "openai_unbiased_labels": "reward/outputs/openai_unbiased_labels/checkpoint-700/model.safetensors",
-    # "openai_unbiased_logprobs_labels": "reward/outputs/openai_unbiased_logprobs_labels/checkpoint-700/model.safetensors",
-    "human_labels_Llama3.1": "model_checkpoints/reward_models/MODEL_Llama-3.1-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-12_18-11-40/checkpoint-1900/model.safetensors",
-    "human_labels_Llama3": "model_checkpoints/reward_models/MODEL_Meta-Llama-3-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-21_15-07-20/checkpoint-800/model.safetensors",
-    "human_labels_Llama3.2_1B": "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/model.safetensors",
-}
 
-# SFT_MODEL_PATH = "meta-llama/Llama-2-13b-hf"
-# TOKENIZER_PATH = "meta-llama/Llama-2-13b-hf"
-# SFT_MODEL_PATH = "meta-llama/Llama-3.1-8B"
-# TOKENIZER_PATH = "meta-llama/Llama-3.1-8B"
-SFT_MODEL_PATH = str(
-    CURRENT_DIR
-    / "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/"
-)
-TOKENIZER_PATH = str(
-    CURRENT_DIR
-    / "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/"
-)
+# The values are tuples of (reward_model_architecture, reward_model_checkpoint_path)
+REWARD_MODEL_PATHS = {
+    "human_labels_Llama3.1": (
+        "meta-llama/Llama-3.1-8B",
+        "model_checkpoints/reward_models/MODEL_Llama-3.1-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-12_18-11-40/checkpoint-1900/model.safetensors",
+    ),
+    "human_labels_Llama3": (
+        "meta-llama/Llama-3-8B",
+        "model_checkpoints/reward_models/MODEL_Meta-Llama-3-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-21_15-07-20/checkpoint-800/model.safetensors",
+    ),
+    "human_labels_Llama3.2_1B": (
+        "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/",
+        "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/model.safetensors",
+    ),
+}
 BATCH_SIZE = 4
 
 
-def setup_reward_model(tokenizer_path, model_path, checkpoint_path):
-    global rw_tokenizer, rw_model, rw_device
+def setup_reward_model(
+    reward_model_architecture: str, checkpoint_path: str
+) -> tuple[AutoTokenizer, GPTRewardModel, torch.device]:
+    """Sets up the reward model with the specified architecture and checkpoint.
 
-    rw_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=False)
+    Args:
+        reward_model_architecture (str): The name/path of the model architecture to use
+        checkpoint_path (str): Path to the model checkpoint file
+
+    Returns:
+        tuple[AutoTokenizer, GPTRewardModel, torch.device]: A tuple containing:
+            - The tokenizer for the reward model
+            - The initialized reward model
+            - The device the model is loaded on
+    """
+    rw_tokenizer = AutoTokenizer.from_pretrained(
+        reward_model_architecture, use_fast=False
+    )
     if rw_tokenizer.pad_token is None:
         rw_tokenizer.pad_token = rw_tokenizer.unk_token
         print("set pad token to unk token: ", rw_tokenizer.pad_token)
 
     rw_tokenizer.padding_side = "right"
 
-    if "Llama-2" in tokenizer_path:
+    if "Llama-2" in reward_model_architecture:
         if rw_tokenizer.pad_token is None:
             rw_tokenizer.pad_token = rw_tokenizer.unk_token
             rw_tokenizer.pad_token_id = rw_tokenizer.unk_token_id
-    elif "Llama-3" in tokenizer_path:
+    elif "Llama-3" in reward_model_architecture:
         if rw_tokenizer.pad_token is None:
-            rw_tokenizer.pad_token = rw_tokenizer.eos_token
-            rw_tokenizer.pad_token_id = rw_tokenizer.eos_token_id
+            rw_tokenizer.pad_token = "<|finetune_right_pad_id|>"
+            rw_tokenizer.pad_token_id = 128004
     else:
-        print(f"Unknown model: {tokenizer_path}")
+        print(f"Unknown model: {reward_model_architecture}")
 
-    rw_model = GPTRewardModel(model_path, tokenizer_path)
+    rw_model = GPTRewardModel(reward_model_architecture, reward_model_architecture)
     print("Loading weights")
     rw_model.load_state_dict(safetensors.torch.load_file(checkpoint_path))
     rw_model.half()
@@ -68,8 +77,18 @@ def setup_reward_model(tokenizer_path, model_path, checkpoint_path):
     rw_model.to(rw_device)
     print("reward model loaded!")
 
+    return rw_tokenizer, rw_model, rw_device
 
-def get_scores(samples: List[str]):
+
+def get_scores(samples: List[str]) -> torch.Tensor:
+    """Calculates reward scores for a list of text samples using the reward model.
+
+    Args:
+        samples (List[str]): List of text samples to score
+
+    Returns:
+        torch.Tensor: Tensor containing reward scores for each sample
+    """
     # Print some stats about the samples
     sample_lengths = [len(sample) for sample in samples]
     print(f"Sample lengths: {sample_lengths}")
@@ -101,7 +120,14 @@ def get_scores(samples: List[str]):
 
 
 @app.route("/reward", methods=["POST"])
-def get_reward():
+def get_reward() -> flask.Response:
+    """Flask endpoint that accepts text samples and returns their reward scores.
+
+    Expects a JSON array of strings in the request body.
+
+    Returns:
+        flask.Response: JSON response containing an array of reward scores
+    """
     data = json.loads(request.data)
     samples = data
     scores = get_scores(samples)
@@ -116,12 +142,16 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="The reward model to use",
-        choices=REWARD_MODELS.keys(),
+        choices=REWARD_MODEL_PATHS.keys(),
     )
     args = parser.parse_args()
 
-    REWARD_CHECKPOINT_PATH = CURRENT_DIR / REWARD_MODELS[args.reward_model]
+    reward_model_architecture, reward_model_checkpoint_path = (
+        CURRENT_DIR / REWARD_MODEL_PATHS[args.reward_model]
+    )
 
-    setup_reward_model(TOKENIZER_PATH, SFT_MODEL_PATH, REWARD_CHECKPOINT_PATH)
+    rw_tokenizer, rw_model, rw_device = setup_reward_model(
+        reward_model_architecture, reward_model_checkpoint_path
+    )
 
     app.run(debug=False, host="0.0.0.0", port=8115)
