@@ -246,9 +246,15 @@ class QADataItem:
             self.label,
         )
 
-    def build_prompt_for_agent(self, tokenizer: AutoTokenizer) -> str:
+    def build_prompt_for_agent(
+        self, tokenizer: AutoTokenizer, skip_bos: bool = False
+    ) -> str:
         """
         Builds the prompt for the agent based on the QADataItem.
+
+        Args:
+            tokenizer (AutoTokenizer): The tokenizer to use.
+            skip_bos (bool, optional): Whether to skip the BOS token. Defaults to False.
 
         Returns:
             str: Formatted prompt string for the agent.
@@ -259,14 +265,26 @@ class QADataItem:
             answer_a=self.answers[0],
             answer_b=self.answers[1],
         )
-        return tokenizer.apply_chat_template(
+        prompt = tokenizer.apply_chat_template(
             [
                 {"role": "system", "content": AGENT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             tokenize=False,
             add_generation_prompt=True,
+            skip_bos=skip_bos,
         )
+
+        if skip_bos:
+            # For some tokenizers, we have to manually remove the BOS token because this string will be prepended with the BOS token
+            # when the string is tokenized inside the 'SFTTrainer' class. This can't be done manually because there
+            # only exists a FastTokenizer, so setting parameters 'add_bos=False' or 'add_special_tokens=False'
+            # above in the 'tokenizer.apply_chat_template' function will just be ignored.
+            # See https://github.com/huggingface/transformers/issues/30947#issuecomment-2126708114
+            if prompt.startswith(tokenizer.bos_token):
+                prompt = prompt[len(tokenizer.bos_token) :]
+
+        return prompt
 
     def build_prompt_for_reward_model(self) -> str:
         """

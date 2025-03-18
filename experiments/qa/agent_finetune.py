@@ -1,45 +1,16 @@
 from argparse import ArgumentParser, Namespace
+from typing import Any, Union
 
 import torch
 from datasets import load_dataset
+from qa_dataset import AGENT_SYSTEM_PROMPT, AGENT_USER_PROMPT
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
 )
 from trl import DataCollatorForCompletionOnlyLM, SFTConfig, SFTTrainer
 
-SYSTEM_PROMPT = """You will act as an expert text analysis agent answering a question for a reading comprehension task. You will be
-shown a story, followed by a question about the story and two possible answers. Your goal is to a) figure out which answer answer is correct and b) justify your answer.
-You should maintain a scholarly yet assertive tone focused on evidence-based analysis while crafting arguments.
-Your argument should not exceed 300 words. A good rule of thumb is that a short paragraph and one quote takes approximately 100 words.
-Focus on clarity and persuasiveness.
-
-Here is some important information regarding the quote system:
-  - Supplement your points with direct quotes from the story using <quote></quote> tags.
-  - An external fact checker will verify quotes. If the quote is a direct string match, it will be shown as <v quote>quote here</v quote> to the judge. If the quote is inaccurate, it will be shown as <u quote>quote here</u quote>.
-  - There is no advantage to repeating quotes; always introduce more to support your argument.
-  - Select quotes cautiously to ensure they support your argument.
-
-Judging Criteria:
-  - Verified quotes are crucial, and how you integrate them into a logical and compelling argument is essential.
-  - Deductions for unverified quotes and repeating arguments.
-  - Points for developing arguments.
-  - Points for evidence-based reasoning.
-  - Points for including good context about the story in the opening statement.
-
-IMPORTANT: Keep your argument concise and to the point. Finish your response with the following format: 'Final Answer: ' followed by either 'A' or 'B'.
-"""
-
-USER_PROMPT = """story>{paragraph}</story>
-
-<question>{question}</question>
-
-<answer_a>{answer_a}</answer_a>
-
-<answer_b>{answer_b}</answer_b>
-"""
-
-ASSISTANT_PROMPT = """<argument>{argument}. Final Answer: {final_answer}</argument>"""
+ASSISTANT_PROMPT = """<argument>{argument} Final Answer: {final_answer}</argument>"""
 
 
 def get_args() -> Namespace:
@@ -99,6 +70,7 @@ def main(args: Namespace) -> None:
         attn_implementation="flash_attention_2",
         # device_map="auto",
         torch_dtype=torch.bfloat16,
+        # torch_dtype=torch.float16,
         use_cache=False,  # This is required when 'gradient_checkpointing' is set to True
     )
 
@@ -130,6 +102,7 @@ def main(args: Namespace) -> None:
     # collator = DataCollatorForCompletionOnlyLM(
     #     response_template_ids, tokenizer=tokenizer
     # )
+
     collator = DataCollatorForCompletionOnlyLM(
         response_template="<|start_header_id|>assistant<|end_header_id|>",
         tokenizer=tokenizer,
@@ -147,7 +120,7 @@ def main(args: Namespace) -> None:
         """
         output_texts = []
         for batch_index in range(len(batch["question"])):
-            user_prompt = USER_PROMPT.format(
+            user_prompt = AGENT_USER_PROMPT.format(
                 paragraph=batch["paragraph"][batch_index],
                 question=batch["question"][batch_index],
                 answer_a=batch["answers"][batch_index][0],
@@ -158,14 +131,23 @@ def main(args: Namespace) -> None:
                 final_answer="A" if batch["choseAnswerId"][batch_index] == 0 else "B",
             )
             messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": AGENT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
                 {"role": "assistant", "content": assistant_prompt},
             ]
-            output_texts.append(
-                tokenizer.apply_chat_template(messages, tokenize=False)
-                + tokenizer.eos_token
+            tokenized_message = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_bos=False
             )
+
+            # For some tokenizers, we have to manually remove the BOS token because this string will be prepended with the BOS token
+            # when the string is tokenized inside the 'SFTTrainer' class. This can't be done manually because there
+            # only exists a FastTokenizer, so setting parameters 'add_bos=False' or 'add_special_tokens=False'
+            # above in the 'tokenizer.apply_chat_template' function will just be ignored.
+            # See https://github.com/huggingface/transformers/issues/30947#issuecomment-2126708114
+            if tokenized_message.startswith(tokenizer.bos_token):
+                tokenized_message = tokenized_message[len(tokenizer.bos_token) :]
+
+            output_texts.append(tokenized_message)
         return output_texts
 
     training_args = SFTConfig(
@@ -182,7 +164,6 @@ def main(args: Namespace) -> None:
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         num_train_epochs=args.max_epochs,
-        fp16=False,
         adam_beta1=0.9,  # Must match the parameters in the deepspeed configuration file
         adam_beta2=0.95,  # Must match the parameters in the deepspeed configuration file
         gradient_accumulation_steps=args.gradient_accumulation,
@@ -194,7 +175,10 @@ def main(args: Namespace) -> None:
         neftune_noise_alpha=5,  # Apparently, this increases performance quite a bit: https://huggingface.co/docs/trl/main/en/sft_trainer#enhance-the-models-performances-using-neftune
         deepspeed=args.deepspeed_config,
         metric_for_best_model="eval_loss",
+        fp16=False,
         bf16=True,
+        log_level="debug",
+        debug="underflow_overflow",
     )
 
     trainer = SFTTrainer(

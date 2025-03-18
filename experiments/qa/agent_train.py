@@ -195,10 +195,12 @@ if __name__ == "__main__":
     # Build the prompts
     tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
     train_prompts = [
-        item.build_prompt_for_agent(tokenizer) for item in qa_dataset if item.is_train
+        item.build_prompt_for_agent(tokenizer, skip_bos=True)
+        for item in qa_dataset
+        if item.is_train
     ]
     val_prompts = [
-        item.build_prompt_for_agent(tokenizer)
+        item.build_prompt_for_agent(tokenizer, skip_bos=True)
         for item in qa_dataset
         if not item.is_train
     ]
