@@ -3,7 +3,7 @@ train:
   epochs: 500
   total_steps: 10000
   batch_size: 8
-  minibatch_size: 2
+  minibatch_size: 1
   eval_batch_size: 8
 
   checkpoint_interval: 128
@@ -18,13 +18,14 @@ train:
 
 model:
   # model_path: "../model_checkpoints/SFT/SFT_Llama-3.2-1B-Instruct-hf_lr1e-5_bs32_maxepoch5_numgpus8_25-03-01_13:22:53/checkpoint-20"
-  model_path: "../model_checkpoints/SFT/SFT_Llama-3.2-1B-Instruct-hf_lr1e-5_bs32_maxepoch5_numgpus8_25-03-06_15:29:48/checkpoint-20"
+  # model_path: "../model_checkpoints/SFT/SFT_Llama-3.2-1B-Instruct-hf_lr1e-5_bs32_maxepoch5_numgpus8_25-03-06_15:29:48/checkpoint-20"
+  model_path: "../model_checkpoints/SFT/SFT_Llama-3.1-8B-Instruct_lr1e-6_bs32_maxepoch5_numgpus8_25-03-14_16:56:39/checkpoint-70"
   num_layers_unfrozen: 2
 
 tokenizer:
   padding_side: "left"
   # tokenizer_path: "../model_checkpoints/SFT/SFT_Llama-3.2-1B-Instruct-hf_lr1e-5_bs32_maxepoch5_numgpus8_25-03-01_13:22:53/checkpoint-20"
-  tokenizer_path: "../model_checkpoints/SFT/SFT_Llama-3.2-1B-Instruct-hf_lr1e-5_bs32_maxepoch5_numgpus8_25-03-06_15:29:48/checkpoint-20"
+  tokenizer_path: "../model_checkpoints/SFT/SFT_Llama-3.1-8B-Instruct_lr1e-6_bs32_maxepoch5_numgpus8_25-03-14_16:56:39/checkpoint-70"
   truncation_side: "left"
 
 optimizer:
@@ -39,15 +40,15 @@ scheduler:
   name: "linear_warmup_cosine_annealing"
   kwargs:
     T_max: 4096
-    T_warmup: 128
+    T_warmup: 256
     eta_min: 1.0e-7
 
 method:
   name: "ppoconfig"
   num_rollouts: 64
-  chunk_size: 8
+  chunk_size: 4
   ppo_epochs: 4
-  init_kl_coef: 0.1
+  init_kl_coef: 0.05
   target: 4
   horizon: 10000
   gamma: 1
