@@ -19,9 +19,9 @@ conda activate mislead
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 
 # MODEL PARAMETERS
-# MODEL=meta-llama/Llama-3.1-8B-Instruct
+MODEL=meta-llama/Llama-3.1-8B
 # MODEL=meta-llama/Meta-Llama-3-8B
-MODEL=meta-llama/Llama-3.2-1B
+# MODEL=/nas/ucb/lukasfluri/data/llama/checkpoints/Llama3.2-1B-hf
 MODEL_NAME=${MODEL##*/}
 
 # DATA PARAMETERS
@@ -45,7 +45,7 @@ GRAD_ACC=1
 let GLOBAL_BATCH_SIZE=8*$BC*$GRAD_ACC
 echo "global batch size = "$GLOBAL_BATCH_SIZE
 NOW=$(date +"%Y-%m-%d_%H-%M-%S")
-EXP_NAME=MODEL_${MODEL_NAME}_DATA_${TRAIN_DATA_NAME}_LR_${LR}_BC_${GLOBAL_BATCH_SIZE}_MAXEPOCH_${MAX_EPOCH}_TIME_${NOW}
+EXP_NAME=GENERAL_MODEL_${MODEL_NAME}_DATA_${TRAIN_DATA_NAME}_LR_${LR}_BC_${GLOBAL_BATCH_SIZE}_MAXEPOCH_${MAX_EPOCH}_TIME_${NOW}
 
 SAVE_DIR=../model_checkpoints/reward_models/$EXP_NAME
 LOGGING_DIR=../logging/reward_model

@@ -18,9 +18,9 @@ conda activate mislead
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 
 # Model and data details
-# MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
-# MODEL_NAME="meta-llama/Llama-3-8B-Instruct"
-MODEL_NAME="/nas/ucb/lukasfluri/data/llama/Llama-3.2-1B-Instruct-hf"
+MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
+# MODEL_NAME="meta-llama/Meta-Llama-3-8B-Instruct"
+# MODEL_NAME="/nas/ucb/lukasfluri/data/llama/Llama-3.2-1B-Instruct-hf"
 MODEL_NAME_SHORT="${MODEL_NAME##*/}"
 TRAIN_DATA="../data/qa/train_qa.json"
 NUM_TRAIN_SAMPLES=531
@@ -28,7 +28,8 @@ NUM_EVAL_SAMPLES=200
 
 # Training details
 NUM_GPUS=8
-LR=1e-5
+LR=1e-6
+# LR=0
 MAX_SEQ_LENGTH=12288 # Note: We don't want any truncation to occur. This value is larger than any tokenized input.
 BATCH_SIZE=1
 MAX_EPOCHS=5
