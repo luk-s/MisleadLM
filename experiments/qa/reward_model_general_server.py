@@ -19,15 +19,19 @@ CURRENT_DIR = pathlib.Path(__file__).parent
 REWARD_MODEL_PATHS = {
     "human_labels_Llama3.1": (
         "meta-llama/Llama-3.1-8B",
-        "model_checkpoints/reward_models/MODEL_Llama-3.1-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-12_18-11-40/checkpoint-1900/model.safetensors",
+        CURRENT_DIR
+        / "model_checkpoints/reward_models/MODEL_Llama-3.1-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-12_18-11-40/checkpoint-1900/model.safetensors",
     ),
     "human_labels_Llama3": (
         "meta-llama/Llama-3-8B",
-        "model_checkpoints/reward_models/MODEL_Meta-Llama-3-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-21_15-07-20/checkpoint-800/model.safetensors",
+        CURRENT_DIR
+        / "model_checkpoints/reward_models/MODEL_Meta-Llama-3-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-21_15-07-20/checkpoint-800/model.safetensors",
     ),
     "human_labels_Llama3.2_1B": (
-        "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/",
-        "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/model.safetensors",
+        CURRENT_DIR
+        / "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/",
+        CURRENT_DIR
+        / "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/model.safetensors",
     ),
 }
 BATCH_SIZE = 4
@@ -51,9 +55,6 @@ def setup_reward_model(
     rw_tokenizer = AutoTokenizer.from_pretrained(
         reward_model_architecture, use_fast=False
     )
-    if rw_tokenizer.pad_token is None:
-        rw_tokenizer.pad_token = rw_tokenizer.unk_token
-        print("set pad token to unk token: ", rw_tokenizer.pad_token)
 
     rw_tokenizer.padding_side = "right"
 
@@ -145,9 +146,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    reward_model_architecture, reward_model_checkpoint_path = (
-        CURRENT_DIR / REWARD_MODEL_PATHS[args.reward_model]
-    )
+    reward_model_architecture, reward_model_checkpoint_path = REWARD_MODEL_PATHS[
+        args.reward_model
+    ]
 
     rw_tokenizer, rw_model, rw_device = setup_reward_model(
         reward_model_architecture, reward_model_checkpoint_path
