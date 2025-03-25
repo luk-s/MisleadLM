@@ -39,9 +39,9 @@ optimizer:
 scheduler:
   name: "linear_warmup_cosine_annealing"
   kwargs:
-    T_max: 4096
+    T_max: 1000
     T_warmup: 256
-    eta_min: 5.0e-6
+    eta_min: 5.0e-8
 
 method:
   name: "ppoconfig"
