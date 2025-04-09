@@ -8,11 +8,11 @@
   },
   "zero_optimization": {
     "stage": 2,
-    "contiguous_gradients": false,
-    "overlap_comm": true,
-    "reduce_scatter": true,
-    "reduce_bucket_size": 5e7,
-    "allgather_bucket_size": 5e7
+    "contiguous_gradients": true,
+    "overlap_comm": false,
+    "reduce_scatter": false,
+    "reduce_bucket_size": 1e7,
+    "allgather_bucket_size": 1e7
   },
   "optimizer": {
     "type": "AdamW",
