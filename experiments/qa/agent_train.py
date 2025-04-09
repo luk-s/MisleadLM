@@ -50,12 +50,20 @@ def get_scores_from_reward_model(prompts):
     return scores
 
 
-def build_reward_fn(dataset: QADataset):
+def build_reward_fn(
+    dataset: QADataset,
+    tokenizer: AutoTokenizer,
+    skip_start_and_end_tokens: bool = True,
+    compute_reward_model_scores: bool = True,
+):
     """
     Builds a reward function using the provided dataset.
 
     Args:
         dataset (QADataset): The dataset to use for building the reward function.
+        tokenizer (AutoTokenizer): The tokenizer to use to build the prompts for the reward model.
+        skip_start_and_end_tokens (bool, optional): Whether to skip the start and end tokens when building the prompts for the reward model. Defaults to True.
+        compute_reward_model_scores (bool): Whether to compute reward model scores. Defaults to True.
 
     Returns:
         callable: A function that takes outputs and returns reward scores.
@@ -65,20 +73,34 @@ def build_reward_fn(dataset: QADataset):
         # Get the matching QADataItem for each sample
         data_items = [dataset.parse_matching_item(sample) for sample in samples]
         reward_model_prompts = [
-            item.build_prompt_for_reward_model() for item in data_items
+            item.build_prompt_for_reward_model(
+                tokenizer, skip_start_and_end_tokens=skip_start_and_end_tokens
+            )
+            for item in data_items
         ]
 
-        return get_scores_from_reward_model(reward_model_prompts)
+        if compute_reward_model_scores:
+            return get_scores_from_reward_model(reward_model_prompts)
+        else:
+            return -torch.ones(len(samples))
 
     return reward_fn
 
 
-def build_metric_fn(dataset: QADataset):
+def build_metric_fn(
+    dataset: QADataset,
+    tokenizer: AutoTokenizer,
+    skip_start_and_end_tokens: bool = True,
+    compute_reward_model_scores: bool = True,
+):
     """
     Builds a metric function to evaluate agent outputs.
 
     Args:
         dataset (QADataset): The dataset to use for building the metric function.
+        tokenizer (AutoTokenizer): The tokenizer to use to build the prompts for the reward model.
+        skip_start_and_end_tokens (bool, optional): Whether to skip the start and end tokens when building the prompts for the reward model. Defaults to True.
+        compute_reward_model_scores (bool): Whether to compute reward model scores. Defaults to True.
 
     Returns:
         callable: A function that takes outputs and returns evaluation metrics.
@@ -87,11 +109,17 @@ def build_metric_fn(dataset: QADataset):
     def metric_fn(samples: List[str], **kwargs):
         data_items = [dataset.parse_matching_item(sample) for sample in samples]
         reward_model_prompts = [
-            item.build_prompt_for_reward_model() for item in data_items
+            item.build_prompt_for_reward_model(
+                tokenizer, skip_start_and_end_tokens=True
+            )
+            for item in data_items
         ]
 
-        # Get the reward scores from the reward model
-        reward_scores = get_scores_from_reward_model(reward_model_prompts).tolist()
+        if compute_reward_model_scores:
+            # Get the reward scores from the reward model
+            reward_scores = get_scores_from_reward_model(reward_model_prompts).tolist()
+        else:
+            reward_scores = -torch.ones(len(samples)).tolist()
 
         # Get the true answers
         true_answers = [
@@ -207,8 +235,12 @@ if __name__ == "__main__":
 
     # Train the agent
     trainer = trlx.train(
-        reward_fn=build_reward_fn(qa_dataset),
-        metric_fn=build_metric_fn(qa_dataset),
+        reward_fn=build_reward_fn(
+            qa_dataset, tokenizer, skip_start_and_end_tokens=True
+        ),
+        metric_fn=build_metric_fn(
+            qa_dataset, tokenizer, skip_start_and_end_tokens=True
+        ),
         prompts=train_prompts,
         eval_prompts=val_prompts,
         config=config,

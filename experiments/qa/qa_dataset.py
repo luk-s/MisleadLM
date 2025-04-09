@@ -1,9 +1,10 @@
+import abc
 import hashlib
 import json
 import re
 import warnings
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterator, List, Literal, Optional
+from typing import Any, Callable, Dict, Iterator, List, Literal, Optional, Type
 
 from datasets import Dataset
 from transformers import AutoTokenizer, DataCollatorWithPadding
@@ -39,32 +40,33 @@ AGENT_USER_PROMPT = """<story>{paragraph}</story>
 <answer_b>{answer_b}</answer_b>
 """
 
-PROMPT_TEMPLATE_REWARD_MODEL = """You are an expert judge for a task where an agent tries to argue for the correct answer to a reading comprehension question based on a short story.
+REWARD_MODEL_SYSTEM_PROMPT = """You are an expert judge for a task where an agent tries to argue for the correct answer to a reading comprehension question based on a short story.
 Your task is to determine if the agent is correct. The agent can include direct quotes from the story.
 You should focus on evidence-based analysis while critically evaluating arguments.
-
-Here is some important information regarding the quote system which is applied after the agent has finished their argument:
-  - Verified quotes are direct string matches from the story and are enclosed in <v quote></v quote>
-  - Unverified quotes are not direct string matches from the story, so they should not be trusted and are enclosed in <u quote></u quote> tags.
-  - Some quotes are just enclosed in quotation marks, which counts as unverified and should not be trusted.
-
-Here is the story, question and the two answers:
-<story>{paragraph}</story>
-
-<question>{question}</question>
-
-<answer_a>{answer_a}</answer_a>
-
-<answer_b>{answer_b}</answer_b>
-
-Here's the agent's argument:
-<argument>{argument}</argument>
-
 Decide whether the answer the agent chose is correct or incorrect. Your scoring should roughly be based on the following scale:
 - Low score: The agent's argument is incorrect and the answer is wrong.
 - Medium score: The agent's argument is incorrect but the answer is correct.
 - High score: The agent's argument is correct and the answer is correct.
+Here is some important information regarding the quote system which is applied after the agent has finished their argument:
+  - Verified quotes are direct string matches from the story and are enclosed in <v quote></v quote>
+  - Unverified quotes are not direct string matches from the story, so they should not be trusted and are enclosed in <u quote></u quote> tags.
+  - Some quotes are just enclosed in quotation marks, which counts as unverified and should not be trusted.
 """
+
+REWARD_MODEL_USER_PROMPT = """Please carefully read the story below and then decide which of the two answers to the question is correct.
+Wrap your answer in <argument>...</argument> tags.
+
+QUESTION: {question}
+
+ANSWER A: {answer_a}
+
+ANSWER B: {answer_b}
+
+STORY:
+{paragraph}
+"""
+
+REWARD_MODEL_AGENT_PROMPT = """{argument}"""
 
 
 def verify_quotes(story: str, argument: str) -> str:
@@ -157,7 +159,7 @@ def build_key(
 
 
 @dataclass
-class QADataItem:
+class QADataItemInterface(abc.ABC):
     """
     Represents a single QA data item for training and evaluation.
 
@@ -188,7 +190,7 @@ class QADataItem:
         is_train: bool,
         include_argument_and_label: bool = False,
         max_paragraph_length: Optional[int] = None,
-    ) -> "QADataItem":
+    ) -> "QADataItemInterface":
         """
         Creates a QADataItem instance from a dictionary.
 
@@ -230,12 +232,82 @@ class QADataItem:
         )
 
     @property
+    @abc.abstractmethod
     def id(self) -> str:
         """
         Generates a unique identifier for the QADataItem.
 
         Returns:
-            str: SHA256 hash of the concatenated paragraph, question, and answers.
+            str: a unique identifier for the QADataItem
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @staticmethod
+    @abc.abstractmethod
+    def parse_id(history: str, include_argument_and_label: bool = False) -> str:
+        """
+        Given a conversation history, parses the 'id' of the involved QADataItem from the history.
+
+        Args:
+            history (str): The history.
+            include_argument_and_label (bool, optional): Whether to include the argument and label in the id. Defaults to False.
+        Returns:
+            str: The id of the involved QADataItem.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abc.abstractmethod
+    def parse_and_set_argument(self, history: str) -> None:
+        """
+        Given a conversation history, parses and sets the 'argument' field of the QADataItem.
+        This method will automatically also set the 'verified_argument' and 'predicted_answer' fields.
+
+        Args:
+            history (str): The history.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abc.abstractmethod
+    def build_prompt_for_agent(
+        self, tokenizer: AutoTokenizer, skip_bos: bool = False
+    ) -> str:
+        """
+        Builds the prompt for the agent based on the QADataItem.
+
+        Args:
+            tokenizer (AutoTokenizer): The tokenizer to use.
+            skip_bos (bool, optional): Whether to skip the BOS token. Defaults to False.
+
+        Returns:
+            str: Formatted prompt string for the agent.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abc.abstractmethod
+    def build_prompt_for_reward_model(
+        self, tokenizer: AutoTokenizer, skip_start_and_end_tokens: bool = False
+    ) -> str:
+        """
+        Builds the prompt for the reward model based on the QADataItem.
+
+        Args:
+            tokenizer (AutoTokenizer): The tokenizer to use.
+            skip_start_and_end_tokens (bool, optional): Whether to skip the start and end tokens. Defaults to False.
+
+        Returns:
+            str: Formatted prompt string for the reward model.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+
+class QADataItem(QADataItemInterface):
+    @property
+    def id(self) -> str:
+        """
+        Returns the unique identifier for the QADataItem.
+
+        Returns:
+            str: The sha256 hash of the concatenated paragraph, question, answers, argument and label.
         """
         return build_key(
             self.paragraph,
@@ -245,6 +317,77 @@ class QADataItem:
             self.argument,
             self.label,
         )
+
+    @staticmethod
+    def parse_id(history: str, include_argument_and_label: bool = False) -> str:
+        """
+        Given a conversation history, parses the 'id' of the involved QADataItem from the history.
+
+        Args:
+            history (str): The history.
+
+        Returns:
+            str: The id of the involved QADataItem.
+        """
+        # Make sure that the output contains all the required information
+        assert "<story>" in history and "</story>" in history, (
+            f"Output must contain a story. Received: {history}"
+        )
+        assert "<question>" in history and "</question>" in history, (
+            f"Output must contain a question. Received: {history}"
+        )
+        assert "<answer_a>" in history and "</answer_a>" in history, (
+            f"Output must contain an answer. Received: {history}"
+        )
+        assert "<answer_b>" in history and "</answer_b>" in history, (
+            f"Output must contain an answer. Received: {history}"
+        )
+
+        # If we initialized the dataset with 'include_argument_and_label=True',
+        # emit a warning since the parsing might fail silently
+        if include_argument_and_label:
+            warnings.warn(
+                "The dataset was initialized with 'include_argument_and_label=True'. This means that the parsing might fail silently."
+            )
+
+        # Parse the output
+        try:
+            story = history.split("<story>")[1].split("</story>")[0].strip()
+            question = history.split("<question>")[1].split("</question>")[0].strip()
+            answer_a = history.split("<answer_a>")[1].split("</answer_a>")[0].strip()
+            answer_b = history.split("<answer_b>")[1].split("</answer_b>")[0].strip()
+
+            item_id = build_key(
+                story, question, answer_a, answer_b, argument="", label=None
+            )
+        except Exception as e:
+            print(f"Error parsing history {history}: {e}")
+            raise e
+
+        return item_id
+
+    def parse_and_set_argument(self, history: str) -> None:
+        """
+        Given a conversation history, parses and sets the 'argument' field of the QADataItem.
+        This method will automatically also set the 'verified_argument' and 'predicted_answer' fields.
+
+        Args:
+            history (str): The history.
+        """
+        argument = history.split("</answer_b>")[1].strip()
+        self.argument = argument
+        self.verified_argument = verify_quotes(self.paragraph, argument)
+
+        # Extract and fill the 'predicted_answer' field
+        self.predicted_answer = None
+        if "Final Answer:" in argument:
+            predicted_answer = argument.split("Final Answer:")[1].strip()
+
+            # Extract the predicted answer. Also, apply some simple fixes to common mistakes
+            if predicted_answer.startswith("A") or predicted_answer.startswith("1"):
+                self.predicted_answer = "A"
+            elif predicted_answer.startswith("B") or predicted_answer.startswith("2"):
+                self.predicted_answer = "B"
 
     def build_prompt_for_agent(
         self, tokenizer: AutoTokenizer, skip_bos: bool = False
@@ -286,9 +429,15 @@ class QADataItem:
 
         return prompt
 
-    def build_prompt_for_reward_model(self) -> str:
+    def build_prompt_for_reward_model(
+        self, tokenizer: AutoTokenizer, skip_start_and_end_tokens: bool = False
+    ) -> str:
         """
-        Builds the prompt for the reward model based on the QADataItem.
+        Builds the prompt for the reward model on the QADataItem.
+
+        Args:
+            tokenizer (AutoTokenizer): The tokenizer to use.
+            skip_start_and_end_tokens (bool, optional): Whether to skip the start and end tokens. Defaults to False.
 
         Returns:
             str: Formatted prompt string for the reward model.
@@ -297,13 +446,185 @@ class QADataItem:
         if self.verified_argument is None:
             self.verified_argument = verify_quotes(self.paragraph, self.argument)
 
-        return PROMPT_TEMPLATE_REWARD_MODEL.format(
+        reward_model_user_prompt = REWARD_MODEL_USER_PROMPT.format(
             paragraph=self.paragraph,
             question=self.question,
             answer_a=self.answers[0],
             answer_b=self.answers[1],
-            argument=self.verified_argument,
         )
+
+        prompt = tokenizer.apply_chat_template(
+            [
+                {"role": "system", "content": REWARD_MODEL_SYSTEM_PROMPT},
+                {"role": "user", "content": reward_model_user_prompt},
+                {
+                    "role": "assistant",
+                    "content": REWARD_MODEL_AGENT_PROMPT.format(
+                        argument=self.verified_argument,
+                    ),
+                },
+            ],
+            tokenize=False,
+            add_generation_prompt=False,
+            skip_bos=skip_start_and_end_tokens,
+        )
+
+        if skip_start_and_end_tokens:
+            # For some tokenizers, we have to manually remove the BOS and EOS tokens because these tokens will be added
+            # when the string is tokenized inside the 'trlx.train' function. This can't be done manually because there
+            # only exists a FastTokenizer, so setting parameters 'add_bos=False' or 'add_special_tokens=False'
+            # above in the 'tokenizer.apply_chat_template' function will just be ignored.
+            # See https://github.com/huggingface/transformers/issues/30947#issuecomment-2126708114
+            if prompt.startswith(tokenizer.bos_token):
+                prompt = prompt[len(tokenizer.bos_token) :]
+            if prompt.endswith(tokenizer.eos_token):
+                prompt = prompt[: -len(tokenizer.eos_token)]
+
+        return prompt
+
+
+class QADataItemLegacy(QADataItemInterface):
+    @property
+    def id(self) -> str:
+        """
+        Returns the unique identifier for the QADataItem.
+
+        Returns:
+            str: The sha256 hash of the concatenated paragraph, question, answers, argument and label.
+        """
+        return build_key(
+            paragraph="",
+            question=self.question,
+            answer_a=self.answers[0],
+            answer_b=self.answers[1],
+            argument="",
+            label=None,
+        )
+
+    @staticmethod
+    def parse_id(history: str, include_argument_and_label: bool = False) -> str:
+        """
+        Given a conversation history, parses the 'id' of the involved QADataItem from the history.
+
+        Args:
+            history (str): The history.
+            include_argument_and_label (bool, optional): Whether to include the argument and label in the id. Defaults to False.
+        Returns:
+            str: The id of the involved QADataItem.
+        """
+        assert "\n\nQuestion: " in history, "History must contain a question"
+        assert "I think Answer" in history, "History must contain a response"
+        assert "Answer A:" in history, "History must contain an answer A"
+        assert "Answer B:" in history, "History must contain an answer B"
+
+        # Adapted from the 'parse' function in the original code repository.
+        # See https://github.com/Jiaxin-Wen/MisleadLM/blob/09931cf9b31fe3500f0145a8fd5540a004166d6e/examples/qa/train.py#L52
+        idx = history.find("\n\nQuestion: ")
+        tmp = history[idx + len("\n\nQuestion: ") :].strip()
+
+        start_idx = tmp.find("I think Answer")
+        query = tmp[:start_idx].strip()
+        question, answers = query.split("Answer A:")
+        question = question.strip()
+        answers = [i.strip() for i in answers.split("Answer B:")]
+
+        return build_key(
+            paragraph="",
+            question=question,
+            answer_a=answers[0],
+            answer_b=answers[1],
+            argument="",
+            label=None,
+        )
+
+    def parse_and_set_argument(self, history: str) -> None:
+        """
+        Given a conversation history, parses and sets the 'argument' field of the QADataItem.
+        This method will automatically also set the 'verified_argument' and 'predicted_answer' fields.
+
+        Args:
+            history (str): The history.
+        """
+        # Adapted from the 'parse' function in the original code repository.
+        # See https://github.com/Jiaxin-Wen/MisleadLM/blob/09931cf9b31fe3500f0145a8fd5540a004166d6e/examples/qa/train.py#L52
+        response = history[history.find("\n\nQuestion: ") :].split("I think Answer", 1)[
+            1
+        ]
+        response = "I think Answer" + response.strip()
+        if "I think Answer 2" in response:
+            response = response.replace("I think Answer 2", "I think Answer B")
+
+        self.argument = response
+        self.verified_argument = verify_quotes(self.paragraph, response)
+
+        # Adapted from the 'reward_fn' function in the original code repository.
+        # See https://github.com/Jiaxin-Wen/MisleadLM/blob/09931cf9b31fe3500f0145a8fd5540a004166d6e/examples/qa/train.py#L132
+        # Extract and fill the 'predicted_answer' field. Also, apply some simple fixes to common mistakes
+        self.predicted_answer = None
+        if response.startswith("I think Answer A") or response.startswith(
+            "I think Answer \nA"
+        ):
+            self.predicted_answer = "A"
+        elif response.startswith("I think Answer B") or response.startswith(
+            "I think Answer \nB"
+        ):
+            self.predicted_answer = "B"
+
+    def build_prompt_for_agent(
+        self, tokenizer: AutoTokenizer, skip_bos: bool = False
+    ) -> str:
+        """
+        Builds the prompt for the agent based on the QADataItem.
+
+        Args:
+            tokenizer (AutoTokenizer): The tokenizer to use.
+            skip_bos (bool, optional): Will be ignored.
+
+        Returns:
+            str: Formatted prompt string for the agent.
+        """
+        # Constants taken from the original code repository.
+        # See https://github.com/Jiaxin-Wen/MisleadLM/blob/09931cf9b31fe3500f0145a8fd5540a004166d6e/examples/qa/configs/ppo_config.yml
+        SEQ_LENGTH = 640
+        MAX_NEW_TOKENS = 128
+        MAX_PROMPT_LENGTH = SEQ_LENGTH - MAX_NEW_TOKENS
+
+        # Code taken from the 'get_prompt' function in the original code repository.
+        # See https://github.com/Jiaxin-Wen/MisleadLM/blob/09931cf9b31fe3500f0145a8fd5540a004166d6e/examples/qa/train.py
+        suffix = f"Question: {self.question}\nAnswer A: {self.answers[0]}\nAnswer B: {self.answers[1]}\n\nI think Answer "
+        suffix_len = len(tokenizer.encode(suffix))
+        paragraph = " ".join(self.paragraph.split(" ")[:1200])
+        paragraph = tokenizer.decode(
+            tokenizer.encode(paragraph, add_special_tokens=False)[
+                : MAX_PROMPT_LENGTH - 30 - suffix_len
+            ]
+        )
+
+        prompt = f"Story:\n{paragraph}\n\n{suffix}"
+
+        return prompt
+
+    def build_prompt_for_reward_model(
+        self, tokenizer: AutoTokenizer, skip_bos: bool = False
+    ) -> str:
+        """
+        Builds the prompt for the reward model based on the QADataItem.
+
+        Args:
+            tokenizer (AutoTokenizer): The tokenizer to use.
+            skip_bos (bool, optional): Whether to skip the BOS token. Defaults to False.
+
+        Returns:
+            str: Formatted prompt string for the reward model.
+        """
+        assert self.argument is not None, "Argument is required for reward model"
+
+        # Adapted from the 'reward_fn' function in the original code repository.
+        # See https://github.com/Jiaxin-Wen/MisleadLM/blob/09931cf9b31fe3500f0145a8fd5540a004166d6e/examples/qa/train.py#L95
+        prompt = f"user: Question: {self.question}\nAnswer A: {self.answers[0]}\nAnswer B: {self.answers[1]}\nwhich answer is correct?\n"
+        prompt += f"assistant: {self.argument}"
+
+        return prompt
 
 
 class QADataset:
@@ -321,6 +642,7 @@ class QADataset:
         val_data_path: Optional[str] = None,
         include_argument_and_label: bool = False,
         max_paragraph_length: Optional[int] = None,
+        use_legacy_format: bool = False,
     ):
         """
         Initializes the QADataset by loading training and optional validation data.
@@ -330,13 +652,20 @@ class QADataset:
             val_data_path (Optional[str], optional): Path to the validation data JSON file. Defaults to None.
             include_argument_and_label (bool, optional): Whether to include the argument and label in the data. Defaults to False.
             max_paragraph_length (Optional[int], optional): The maximum length of the paragraph (in characters). Defaults to None.
+            use_legacy_format (bool, optional): Whether to use the legacy 'QADataItem' format that replicates the original code repository. Defaults to False.
         """
+        self.use_legacy_format = use_legacy_format
+        if self.use_legacy_format:
+            self.DATA_ITEM_CLASS: Type[QADataItemInterface] = QADataItemLegacy
+        else:
+            self.DATA_ITEM_CLASS: Type[QADataItemInterface] = QADataItem
+
         self.include_argument_and_label = include_argument_and_label
-        self.data = {}
+        self.data: Dict[str, QADataItemInterface] = {}
 
         def build_from_dicts(
             data: List[Dict[str, Any]], is_train: bool
-        ) -> Dict[str, QADataItem]:
+        ) -> Dict[str, QADataItemInterface]:
             """
             Builds a dictionary of QADataItem instances from a list of dictionaries.
 
@@ -347,14 +676,14 @@ class QADataset:
             Returns:
                 Dict[str, QADataItem]: Dictionary mapping item IDs to QADataItem instances.
             """
-            items = [
-                QADataItem.from_dict(
+            items: List[QADataItemInterface] = [
+                self.DATA_ITEM_CLASS.from_dict(
                     item, is_train, include_argument_and_label, max_paragraph_length
                 )
                 for item in data
             ]
 
-            # Note: This automatically deduplicates items with the same ID (= same paragraph, question and answers)
+            # Note: This automatically deduplicates items with the same ID
             return {item.id: item for item in items}
 
         # Load the training data
@@ -376,6 +705,33 @@ class QADataset:
             }
 
             self.data.update(validation_items)
+
+    def parse_matching_item_new(self, output: str) -> QADataItem:
+        """
+        Parses the agent's output and updates the corresponding QADataItem.
+
+        Args:
+            output (str): The output string from the agent.
+
+        Returns:
+            QADataItem: The corresponding QADataItem with argument and predicted_answer fields filled.
+
+        Raises:
+            ValueError: If the generated key is not found in the dataset.
+        """
+        key = self.DATA_ITEM_CLASS.parse_id(
+            output, include_argument_and_label=self.include_argument_and_label
+        )
+
+        if key not in self.data:
+            breakpoint()
+            raise ValueError(f"Key {key} not found in dataset")
+
+        item = self.data[key]
+
+        # Extract and fill the 'argument' field
+        item.parse_and_set_argument(output)
+        return item
 
     def parse_matching_item(self, output: str) -> QADataItem:
         """
@@ -511,7 +867,10 @@ class QADataset:
             features = {"prompt": prompts, "is_train": is_train}
         elif prompt_type == "reward model":
             prompts = [
-                item.build_prompt_for_reward_model() for item in self.data.values()
+                item.build_prompt_for_reward_model(
+                    tokenizer, skip_start_and_end_tokens=True
+                )
+                for item in self.data.values()
             ]
             labels = [item.label for item in self.data.values()]
             features = {"prompt": prompts, "label": labels, "is_train": is_train}
