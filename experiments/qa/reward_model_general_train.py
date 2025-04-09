@@ -385,7 +385,7 @@ def setup_reward_model(
         lora_dropout=0.1,
     )
 
-    # Initialize the reward model from the (supervised) fine-tuned GPT-J
+    # Initialize the reward model from the pre-trained model
     model_name: str = args.ckpt_path
     load_checkpoint: bool = False
     if "checkpoint" in model_name:
