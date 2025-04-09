@@ -53,7 +53,7 @@ EVAL_STEPS=100
 SAVE_STEPS=100
 
 
-deepspeed --num_gpus 8 --master_port 6601 ../reward_model_general_train_new.py \
+deepspeed --num_gpus 8 --master_port 6601 ../reward_model_general_train_experimental.py \
     --run_name $EXP_NAME \
     --deepspeed_config $DEEPSPEED \
     --train_data $TRAIN_DATA \
