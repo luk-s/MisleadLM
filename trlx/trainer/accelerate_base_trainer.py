@@ -514,10 +514,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     rewards = metrics["reward"]
                     if not isinstance(rewards, list):
                         rewards = rewards.tolist()
+                    stderr_reward = np.std(rewards) / np.sqrt(len(rewards))
                     mean_reward = np.mean(rewards)
                     columns.append("reward")
                     columns_data.append(rewards)
                     stats[f"reward/mean{sweep_suffix}"] = mean_reward
+                    stats[f"reward/stderr{sweep_suffix}"] = stderr_reward
 
                     stats["time/metric"] = time() - metric_time
 
@@ -647,6 +649,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         "reward_where_incomplete_responses": metrics[
                             "reward_where_incomplete_responses"
                         ],
+                        "reward standard error": stderr_reward,
                     }
                 else:
                     raise ValueError(f"Unknown metrics: {metrics.keys()}")

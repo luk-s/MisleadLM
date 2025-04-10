@@ -349,7 +349,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         clock = Clock()
         ppo_rl_elements = []
         accumulate_stats = []
-
+        accuracy_avg = 0
+        accuracy_indices = []
         while len(ppo_rl_elements) < num_rollouts:
             stats = {}
 
@@ -407,12 +408,18 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     .to(device)
                 )
 
+                all_metrics = self.metric_fn(
+                        samples=all_str_samples,
+                        prompts=all_str_prompts,
+                        outputs=all_str_outputs,
+                    )
                 stats["time/exp_score"] = time() - exp_score_time
                 all_scores = list(
                     all_scores.reshape(self.accelerator.num_processes, -1).unbind()
                 )
             else:
                 all_scores = None
+                all_metrics = None
 
             # use torch 1.13.1
             if torch.distributed.is_initialized():
@@ -453,6 +460,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             stats["exp_scores/std"] = all_scores_std
             stats["exp_scores/running_mean"] = self.running_moments.mean
             stats["exp_scores/running_std"] = self.running_moments.std
+            stats["exp_scores/stderror"] = all_scores_std / np.sqrt(num_rollouts)
+            if all_metrics:
+                accuracy_indices.append(all_metrics["accuracy"])
 
             if self.config.method.scale_reward == "running":
                 scores /= self.running_moments.std
@@ -616,6 +626,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             for k in stats
         }
         stats["kl_ctl_value"] = self.kl_ctl.value
+        stats["accuracy_stderr"] = np.std(accuracy_indices) / num_rollouts
         self.mean_kl = stats["policy/sqrt_kl"] ** 2
 
         self.accelerator.log(stats, step=iter_count)

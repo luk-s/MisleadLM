@@ -28,8 +28,7 @@ REWARD_MODEL_PATHS = {
         / "model_checkpoints/reward_models/MODEL_Meta-Llama-3-8B_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-21_15-07-20/checkpoint-800/model.safetensors",
     ),
     "human_labels_Llama3.2_1B": (
-        CURRENT_DIR
-        / "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/",
+        "meta-llama/Llama-3.2-1B",
         CURRENT_DIR
         / "model_checkpoints/reward_models/MODEL_Llama-3.2-1B-hf_DATA_human_LR_1e-5_BC_16_MAXEPOCH_5_TIME_2025-02-28_14-57-31/checkpoint-1900/model.safetensors",
     ),
