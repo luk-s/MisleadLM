@@ -40,6 +40,8 @@ AGENT_USER_PROMPT = """<story>{paragraph}</story>
 <answer_b>{answer_b}</answer_b>
 """
 
+REWARD_MODEL_IS_INSTRUCT = False
+
 REWARD_MODEL_SYSTEM_PROMPT = """You are an expert judge for a task where an agent tries to argue for the correct answer to a reading comprehension question based on a short story.
 Your task is to determine if the agent is correct. The agent can include direct quotes from the story.
 You should focus on evidence-based analysis while critically evaluating arguments.
@@ -54,7 +56,8 @@ Here is some important information regarding the quote system which is applied a
 """
 
 REWARD_MODEL_USER_PROMPT = """Please carefully read the story below and then decide which of the two answers to the question is correct.
-Wrap your answer in <argument>...</argument> tags.
+Wrap your entire answer in <argument>...</argument> tags and make sure to finish your answer with 'Final Answer: ' followed by either 'A' or 'B'.
+So the output format should be: <argument> ... some argument ... Final Answer: A/B </argument>
 
 QUESTION: {question}
 
@@ -67,6 +70,36 @@ STORY:
 """
 
 REWARD_MODEL_AGENT_PROMPT = """{argument}"""
+
+PROMPT_TEMPLATE_REWARD_MODEL_BASIC = """You are an expert judge for a task where an agent tries to argue for the correct answer to a reading comprehension question based on a short story.
+Your task is to determine if the agent is correct. The agent can include direct quotes from the story.
+You should focus on evidence-based analysis while critically evaluating arguments.
+
+Here is some important information regarding the quote system which is applied after the agent has finished their argument:
+  - Verified quotes are direct string matches from the story and are enclosed in <v quote></v quote>
+  - Unverified quotes are not direct string matches from the story, so they should not be trusted and are enclosed in <u quote></u quote> tags.
+  - Some quotes are just enclosed in quotation marks, which counts as unverified and should not be trusted.
+
+Here is the story, question and the two answers:
+<story>{paragraph}</story>
+
+<question>{question}</question>
+
+<answer_a>{answer_a}</answer_a>
+
+<answer_b>{answer_b}</answer_b>
+
+Here's the agent's argument:
+<argument>{argument}</argument>
+
+IMPORTANT: Make sure that inside the last part of the <argument> tags contains the snippet 'Final Answer: ' followed by either 'A' or 'B'.
+
+Decide whether the answer the agent chose is correct or incorrect. Your scoring should roughly be based on the following scale:
+- If the agent's argument does not contain the snippet 'Final Answer: ' followed by either 'A' or 'B', assign the lowest score.
+- If the agent's argument does contain the snippet 'Final Answer: ' followed by either 'A' or 'B', then:
+  - If the argument + answer is incorrect, assign a medium score.
+  - If the argument + answer is correct, assign a high score.
+"""
 
 
 def verify_quotes(story: str, argument: str) -> str:
@@ -408,15 +441,22 @@ class QADataItem(QADataItemInterface):
             answer_a=self.answers[0],
             answer_b=self.answers[1],
         )
-        prompt = tokenizer.apply_chat_template(
-            [
-                {"role": "system", "content": AGENT_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            tokenize=False,
-            add_generation_prompt=True,
-            skip_bos=skip_bos,
-        )
+
+        # Check if the tokenizer has a chat template
+        if hasattr(tokenizer, "chat_template") and tokenizer.chat_template is not None:
+            prompt = tokenizer.apply_chat_template(
+                [
+                    {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                tokenize=False,
+                add_generation_prompt=True,
+                skip_bos=skip_bos,
+            )
+        else:
+            prompt = (
+                f"SYSTEM: {AGENT_SYSTEM_PROMPT}\n\nUSER: {user_prompt}\n\nASSISTANT: "
+            )
 
         if skip_bos:
             # For some tokenizers, we have to manually remove the BOS token because this string will be prepended with the BOS token
@@ -446,28 +486,38 @@ class QADataItem(QADataItemInterface):
         if self.verified_argument is None:
             self.verified_argument = verify_quotes(self.paragraph, self.argument)
 
-        reward_model_user_prompt = REWARD_MODEL_USER_PROMPT.format(
-            paragraph=self.paragraph,
-            question=self.question,
-            answer_a=self.answers[0],
-            answer_b=self.answers[1],
-        )
+        if REWARD_MODEL_IS_INSTRUCT:
+            reward_model_user_prompt = REWARD_MODEL_USER_PROMPT.format(
+                paragraph=self.paragraph,
+                question=self.question,
+                answer_a=self.answers[0],
+                answer_b=self.answers[1],
+            )
 
-        prompt = tokenizer.apply_chat_template(
-            [
-                {"role": "system", "content": REWARD_MODEL_SYSTEM_PROMPT},
-                {"role": "user", "content": reward_model_user_prompt},
-                {
-                    "role": "assistant",
-                    "content": REWARD_MODEL_AGENT_PROMPT.format(
-                        argument=self.verified_argument,
-                    ),
-                },
-            ],
-            tokenize=False,
-            add_generation_prompt=False,
-            skip_bos=skip_start_and_end_tokens,
-        )
+            prompt = tokenizer.apply_chat_template(
+                [
+                    {"role": "system", "content": REWARD_MODEL_SYSTEM_PROMPT},
+                    {"role": "user", "content": reward_model_user_prompt},
+                    {
+                        "role": "assistant",
+                        "content": REWARD_MODEL_AGENT_PROMPT.format(
+                            argument=self.verified_argument,
+                        ),
+                    },
+                ],
+                tokenize=False,
+                add_generation_prompt=False,
+                skip_bos=skip_start_and_end_tokens,
+            )
+
+        else:
+            prompt = PROMPT_TEMPLATE_REWARD_MODEL_BASIC.format(
+                paragraph=self.paragraph,
+                question=self.question,
+                answer_a=self.answers[0],
+                answer_b=self.answers[1],
+                argument=self.verified_argument,
+            )
 
         if skip_start_and_end_tokens:
             # For some tokenizers, we have to manually remove the BOS and EOS tokens because these tokens will be added
@@ -493,7 +543,7 @@ class QADataItemLegacy(QADataItemInterface):
             str: The sha256 hash of the concatenated paragraph, question, answers, argument and label.
         """
         return build_key(
-            paragraph="",
+            story="",
             question=self.question,
             answer_a=self.answers[0],
             answer_b=self.answers[1],
@@ -529,7 +579,7 @@ class QADataItemLegacy(QADataItemInterface):
         answers = [i.strip() for i in answers.split("Answer B:")]
 
         return build_key(
-            paragraph="",
+            story="",
             question=question,
             answer_a=answers[0],
             answer_b=answers[1],
@@ -550,7 +600,7 @@ class QADataItemLegacy(QADataItemInterface):
         response = history[history.find("\n\nQuestion: ") :].split("I think Answer", 1)[
             1
         ]
-        response = "I think Answer" + response.strip()
+        response = "I think Answer " + response.strip()
         if "I think Answer 2" in response:
             response = response.replace("I think Answer 2", "I think Answer B")
 
@@ -569,6 +619,8 @@ class QADataItemLegacy(QADataItemInterface):
             "I think Answer \nB"
         ):
             self.predicted_answer = "B"
+        else:
+            warnings.warn("Could not parse predicted answer from history")
 
     def build_prompt_for_agent(
         self, tokenizer: AutoTokenizer, skip_bos: bool = False
@@ -605,14 +657,14 @@ class QADataItemLegacy(QADataItemInterface):
         return prompt
 
     def build_prompt_for_reward_model(
-        self, tokenizer: AutoTokenizer, skip_bos: bool = False
+        self, tokenizer: AutoTokenizer, skip_start_and_end_tokens: bool = False
     ) -> str:
         """
         Builds the prompt for the reward model based on the QADataItem.
 
         Args:
             tokenizer (AutoTokenizer): The tokenizer to use.
-            skip_bos (bool, optional): Whether to skip the BOS token. Defaults to False.
+            skip_start_and_end_tokens (bool, optional): Whether to skip the start and end tokens. Defaults to False.
 
         Returns:
             str: Formatted prompt string for the reward model.
@@ -706,7 +758,7 @@ class QADataset:
 
             self.data.update(validation_items)
 
-    def parse_matching_item_new(self, output: str) -> QADataItem:
+    def parse_matching_item(self, output: str) -> QADataItem:
         """
         Parses the agent's output and updates the corresponding QADataItem.
 
@@ -731,77 +783,6 @@ class QADataset:
 
         # Extract and fill the 'argument' field
         item.parse_and_set_argument(output)
-        return item
-
-    def parse_matching_item(self, output: str) -> QADataItem:
-        """
-        Parses the agent's output and updates the corresponding QADataItem.
-
-        Args:
-            output (str): The output string from the agent.
-
-        Returns:
-            QADataItem: The corresponding QADataItem with argument and predicted_answer fields filled.
-
-        Raises:
-            ValueError: If the generated key is not found in the dataset.
-        """
-        # Make sure that the output contains all the required information
-        assert "<story>" in output and "</story>" in output, (
-            f"Output must contain a story. Received: {output}"
-        )
-        assert "<question>" in output and "</question>" in output, (
-            f"Output must contain a question. Received: {output}"
-        )
-        assert "<answer_a>" in output and "</answer_a>" in output, (
-            f"Output must contain an answer. Received: {output}"
-        )
-        assert "<answer_b>" in output and "</answer_b>" in output, (
-            f"Output must contain an answer. Received: {output}"
-        )
-
-        # If we initialized the dataset with 'include_argument_and_label=True',
-        # emit a warning since the parsing might fail silently
-        if self.include_argument_and_label:
-            warnings.warn(
-                "The dataset was initialized with 'include_argument_and_label=True'. This means that the parsing might fail silently."
-            )
-
-        # Parse the output
-        try:
-            story = output.split("<story>")[1].split("</story>")[0].strip()
-            question = output.split("<question>")[1].split("</question>")[0].strip()
-            answer_a = output.split("<answer_a>")[1].split("</answer_a>")[0].strip()
-            answer_b = output.split("<answer_b>")[1].split("</answer_b>")[0].strip()
-
-            key = build_key(
-                story, question, answer_a, answer_b, argument="", label=None
-            )
-        except Exception as e:
-            print(f"Error parsing output {output}: {e}")
-            raise e
-
-        if key not in self.data:
-            raise ValueError(f"Key {key} not found in dataset")
-
-        item = self.data[key]
-
-        # Extract and fill the 'argument' field
-        argument = output.split("</answer_b>")[1].strip()
-        item.argument = argument
-        item.verified_argument = verify_quotes(item.paragraph, argument)
-
-        # Extract and fill the 'predicted_answer' field
-        item.predicted_answer = None
-        if "Final Answer:" in argument:
-            predicted_answer = argument.split("Final Answer:")[1].strip()
-
-            # Extract the predicted answer. Also, apply some simple fixes to common mistakes
-            if predicted_answer.startswith("A") or predicted_answer.startswith("1"):
-                item.predicted_answer = "A"
-            elif predicted_answer.startswith("B") or predicted_answer.startswith("2"):
-                item.predicted_answer = "B"
-
         return item
 
     def __getitem__(self, key: str) -> QADataItem:

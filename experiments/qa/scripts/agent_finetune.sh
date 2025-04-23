@@ -18,7 +18,8 @@ conda activate mislead
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 
 # Model and data details
-MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
+MODEL_NAME="meta-llama/Llama-3.1-8B"
+# MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
 # MODEL_NAME="meta-llama/Meta-Llama-3-8B-Instruct"
 # MODEL_NAME="/nas/ucb/lukasfluri/data/llama/Llama-3.2-1B-Instruct-hf"
 MODEL_NAME_SHORT="${MODEL_NAME##*/}"

@@ -103,10 +103,16 @@ def main(args: Namespace) -> None:
     #     response_template_ids, tokenizer=tokenizer
     # )
 
-    collator = DataCollatorForCompletionOnlyLM(
-        response_template="<|start_header_id|>assistant<|end_header_id|>",
-        tokenizer=tokenizer,
-    )
+    # Check if the tokenizer has a chat template
+    # if hasattr(tokenizer, "chat_template") and tokenizer.chat_template is not None:
+    #     response_template = "<|start_header_id|>assistant<|end_header_id|>"
+    # else:
+    #     response_template = "\n\nASSISTANT:"
+    #
+    # collator = DataCollatorForCompletionOnlyLM(
+    #     response_template=response_template,
+    #     tokenizer=tokenizer,
+    # )
 
     def formatting_prompts_func(batch):
         """
@@ -135,9 +141,21 @@ def main(args: Namespace) -> None:
                 {"role": "user", "content": user_prompt},
                 {"role": "assistant", "content": assistant_prompt},
             ]
-            tokenized_message = tokenizer.apply_chat_template(
-                messages, tokenize=False, add_bos=False
-            )
+
+            # Check if the tokenizer has a chat template
+            if (
+                hasattr(tokenizer, "chat_template")
+                and tokenizer.chat_template is not None
+            ):
+                tokenized_message = tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_bos=False
+                )
+            else:
+                # Fallback if no chat template is available
+                system_text = f"SYSTEM: {AGENT_SYSTEM_PROMPT}\n\n"
+                user_text = f"USER: {user_prompt}\n\n"
+                assistant_text = f"ASSISTANT: {assistant_prompt}"
+                tokenized_message = system_text + user_text + assistant_text
 
             # For some tokenizers, we have to manually remove the BOS token because this string will be prepended with the BOS token
             # when the string is tokenized inside the 'SFTTrainer' class. This can't be done manually because there
@@ -188,7 +206,7 @@ def main(args: Namespace) -> None:
         eval_dataset=eval_dataset,
         args=training_args,
         formatting_func=formatting_prompts_func,
-        data_collator=collator,
+        # data_collator=collator,
     )
 
     trainer.train()

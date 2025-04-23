@@ -108,18 +108,18 @@ def build_metric_fn(
 
     def metric_fn(samples: List[str], **kwargs):
         data_items = [dataset.parse_matching_item(sample) for sample in samples]
-        reward_model_prompts = [
-            item.build_prompt_for_reward_model(
-                tokenizer, skip_start_and_end_tokens=True
-            )
-            for item in data_items
-        ]
 
         if compute_reward_model_scores:
             # Get the reward scores from the reward model
+            reward_model_prompts = [
+                item.build_prompt_for_reward_model(
+                    tokenizer, skip_start_and_end_tokens=True
+                )
+                for item in data_items
+            ]
             reward_scores = get_scores_from_reward_model(reward_model_prompts).tolist()
         else:
-            reward_scores = -torch.ones(len(samples)).tolist()
+            reward_scores = (-torch.ones(len(samples))).tolist()
 
         # Get the true answers
         true_answers = [
@@ -189,6 +189,11 @@ def build_metric_fn(
             else 0.0
         )
 
+        # If any metric has a 'nan' value, set it to -1.0
+        for k, v in metric.items():
+            if isinstance(v, float) and np.isnan(v):
+                metric[k] = -1.0
+
         return metric
 
     return metric_fn
@@ -209,8 +214,10 @@ if __name__ == "__main__":
     # Build the dataset
     # train_path = f"{DATA_PATH}/train_qa.json"
     # test_path = f"{DATA_PATH}/val_qa.json"
-    train_path = f"{DATA_PATH}/train_qa_le8000_balanced.json"
-    test_path = f"{DATA_PATH}/val_qa_le8000_balanced.json"
+    # train_path = f"{DATA_PATH}/train_qa_le8000_balanced.json"
+    # test_path = f"{DATA_PATH}/val_qa_le8000_balanced.json"
+    train_path = f"{DATA_PATH}/train_qa_le8000.json"
+    test_path = f"{DATA_PATH}/val_qa_le8000.json"
     max_paragraph_length = None
     print(f"Using max paragraph length: {max_paragraph_length}")
     qa_dataset = QADataset(
