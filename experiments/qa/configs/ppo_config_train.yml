@@ -1,71 +1,72 @@
 train:
-  seq_length: 12288
+  seed: 1000
   epochs: 500
-  total_steps: 10000
+  tracker: "wandb"
+  trainer: "AcceleratePPOTrainer"
+  pipeline: "PromptPipeline"
+  save_best: false
   batch_size: 8
+  group_name: null
+  seq_length: 12288
+  entity_name: null
+  logging_dir: null
+  total_steps: 10000
+  project_name: "trlx"
+  eval_interval: 128
+  checkpoint_dir: "WILL_BE_OVERWRITTEN"
   minibatch_size: 1
   eval_batch_size: 8
-
   checkpoint_interval: 128
-  eval_interval: 128
-
-  pipeline: "PromptPipeline"
-  trainer: "AcceleratePPOTrainer"
-  checkpoint_dir: "../model_checkpoints/PPO"
-  save_best: false
-  seed: 1000
-  tracker: "wandb"
+  rollout_logging_dir: null
 
 model:
-  # model_path: "../model_checkpoints/SFT/SFT_Llama-3.2-1B-Instruct-hf_lr1e-5_bs32_maxepoch5_numgpus8_25-03-01_13:22:53/checkpoint-20"
-  # model_path: "../model_checkpoints/SFT/SFT_Llama-3.2-1B-Instruct-hf_lr1e-5_bs32_maxepoch5_numgpus8_25-03-06_15:29:48/checkpoint-20"
-  model_path: "../model_checkpoints/SFT/SFT_Llama-3.1-8B-Instruct_lr1e-6_bs32_maxepoch5_numgpus8_25-03-14_16:56:39/checkpoint-70"
+  model_path: "../model_checkpoints/SFT/SFT_Llama-3.1-8B_lr1e-6_bs32_maxepoch5_numgpus8_25-04-23_08:48:27/checkpoint-80"
+  delta_kwargs: null
+  model_arch_type: "causal"
   num_layers_unfrozen: 2
 
 tokenizer:
   padding_side: "left"
-  # tokenizer_path: "../model_checkpoints/SFT/SFT_Llama-3.2-1B-Instruct-hf_lr1e-5_bs32_maxepoch5_numgpus8_25-03-01_13:22:53/checkpoint-20"
-  tokenizer_path: "../model_checkpoints/SFT/SFT_Llama-3.1-8B-Instruct_lr1e-6_bs32_maxepoch5_numgpus8_25-03-14_16:56:39/checkpoint-70"
+  tokenizer_path: "../model_checkpoints/SFT/SFT_Llama-3.1-8B_lr1e-6_bs32_maxepoch5_numgpus8_25-04-23_08:48:27/checkpoint-80"
   truncation_side: "left"
 
 optimizer:
   name: "adamw"
   kwargs:
-    lr: 8.0e-7
-    betas: [0.9, 0.999]
+    lr: 2.0e-7
     eps: 1.0e-8
+    betas: [0.9, 0.999]
     weight_decay: 0.01
 
 scheduler:
   name: "linear_warmup_cosine_annealing"
   kwargs:
-    T_max: 1000
-    T_warmup: 256
+    T_max: 3000
     eta_min: 5.0e-8
+    T_warmup: 256
 
 method:
+  lam: 0.95
   name: "ppoconfig"
-  num_rollouts: 256
-  chunk_size: 4
-  ppo_epochs: 4
-  init_kl_coef: 0.5
+  gamma: 1
   target: 4
   horizon: 10000
-  gamma: 1
-  lam: 0.95
-
-  cliprange: 0.2
-  cliprange_reward: 10
-  cliprange_value: 0.2
-  vf_coef: 0.2
-  scale_reward: "running"
-  ref_mean: null
   ref_std: null
-  gen_experience_kwargs: null
+  vf_coef: 0.2
+  ref_mean: null
+  cliprange: 0.2
+  chunk_size: 4
   gen_kwargs:
+    top_p: 0.8
+    do_sample: true
+    temperature: 0.8
+    eos_token_id: 2
     max_new_tokens: 256
     min_new_tokens: 32
-    eos_token_id: 2
-    do_sample: True
-    top_p: 0.8
-    temperature: 0.8
+  ppo_epochs: 4
+  init_kl_coef: 0.05
+  num_rollouts: 256
+  scale_reward: "running"
+  cliprange_value: 0.2
+  cliprange_reward: 10
+  gen_experience_kwargs: null

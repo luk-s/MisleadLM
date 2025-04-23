@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import transformers
+from huggingface_hub import HfApi, Repository
 from torchtyping import TensorType
 from transformers.modeling_attn_mask_utils import (
     AttentionMaskConverter,
@@ -33,9 +34,30 @@ from trlx.utils.modeling import (
     whiten,
 )
 
+
+def clone_hf_repo(repo_id: str, local_dir: str, repo_type: str = "model") -> None:
+    """Check repo existence, clone if available, and list local files."""
+
+    # If the 'local_dir' already exists, return
+    if Path(local_dir).exists():
+        print(f"Repository {repo_id} already exists in {local_dir}")
+        return
+
+    # Otherwise, clone the repo
+    try:
+        repo = Repository(
+            local_dir=local_dir,
+            clone_from=repo_id,
+            repo_type=repo_type,
+            skip_lfs_files=False,  # For faster cloning without LFS files
+        )
+        print(f"Successfully cloned to {Path(local_dir).resolve()}")
+    except EnvironmentError as e:
+        print(f"Cloning failed: {str(e)}")
+        return
+
+
 # KL Controllers
-
-
 class AdaptiveKLController:
     """Adaptive KL Controller as described in Ziegler et al. "Fine-Tuning Language Models from Human Preferences"
     Reference: Section 2.2 https://arxiv.org/pdf/1909.08593.pdf#page=2
@@ -400,6 +422,10 @@ class CausalLMHydraWithValueHead(nn.Module):
                     final_norm=hf_get_causal_final_norm(self.base_model),
                     lm_head=self.base_model.lm_head,
                 )
+        else:
+            # This is required because some parts of the 'trlx' library will check whether the frozen head is present
+            self.frozen_head = "This is a dummy frozen head"
+
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
         self.base_model_transformer_args = inspect.getfullargspec(
             self.base_model.transformer.forward
@@ -532,15 +558,21 @@ class CausalLMHydraWithValueHead(nn.Module):
 
     @classmethod
     def from_pretrained(
-        cls, pretrained_model_name_or_path, config, num_layers_unfrozen=-1, **kwargs
+        cls,
+        pretrained_model_name_or_path,
+        config,
+        num_layers_unfrozen=-1,
+        hf_local_target_dir=None,
+        **kwargs,
     ):
         """
         Loads a CausalLMHydraWithValueHead model from a pretrained checkpoint.
 
         Args:
-            pretrained_model_name_or_path (str): Path to the pretrained checkpoint.
+            pretrained_model_name_or_path (str): Name of hf repo or path to the pretrained checkpoint.
             config (Union[transformers.PretrainedConfig, str]): Model configuration.
             num_layers_unfrozen (int, optional): Number of layers to unfreeze. Defaults to -1.
+            hf_local_target_dir (str, optional): Target directory for the cloned hf repo. Defaults to None.
             **kwargs: Additional arguments.
 
         Returns:
@@ -555,6 +587,25 @@ class CausalLMHydraWithValueHead(nn.Module):
             load_weights=False,
             **kwargs,
         )
+
+        # Check whether pretrained_model_name_or_path is a hf repo
+        hf_api = HfApi()
+        if hf_api.repo_exists(repo_id=pretrained_model_name_or_path, repo_type="model"):
+            assert hf_local_target_dir is not None, (
+                "'hf_local_target_dir' must be provided if pretrained_model_name_or_path is a huggingface repo"
+            )
+
+            # Clone the repo
+            clone_hf_repo(
+                repo_id=pretrained_model_name_or_path, local_dir=hf_local_target_dir
+            )
+            pretrained_model_name_or_path = hf_local_target_dir
+
+        else:
+            if hf_local_target_dir is not None:
+                print(
+                    "Warning: pretrained_model_name_or_path is not a huggingface repo, but 'hf_local_target_dir' was provided. This will be ignored."
+                )
 
         # Load state_dict, handling both single and sharded checkpoints
         checkpoint_path = Path(pretrained_model_name_or_path)
@@ -628,11 +679,15 @@ class CausalLMHydraWithValueHead(nn.Module):
         assert base_model_model_state_dict, "base_model_model_state_dict is empty"
 
         if not base_model_rest_state_dict:
+            print(
+                "Only model weights found, building complete model from these weights"
+            )
             # We only have weights for the model part of the base model, so first load the weight of the model part, then build the complete model from these weights
             model.base_model.load_state_dict(base_model_model_state_dict, strict=True)
             model.build_complete_model()
 
         else:
+            print("Full base model weights found, loading these weights")
             # We do have weights for the entire base model, so first build the complete base model shell, then load the weights
             model.build_complete_model()
             base_model_state_dict = {
