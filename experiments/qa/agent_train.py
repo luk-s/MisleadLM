@@ -181,8 +181,8 @@ if __name__ == "__main__":
     # Build the dataset
     # train_path = f"{DATA_PATH}/train_qa.json"
     # test_path = f"{DATA_PATH}/val_qa.json"
-    train_path = f"{DATA_PATH}/train_qa_le8000_balanced.json"
-    test_path = f"{DATA_PATH}/val_qa_le8000_balanced.json"
+    train_path = f"{DATA_PATH}/train_qa_le8000.json"
+    test_path = f"{DATA_PATH}/val_qa_le8000.json"
     max_paragraph_length = None
     print(f"Using max paragraph length: {max_paragraph_length}")
     qa_dataset = QADataset(
