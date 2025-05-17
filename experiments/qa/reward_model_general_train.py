@@ -278,7 +278,7 @@ class DataCollatorReward:
             "attention_mask": torch.stack(
                 batch_chosen_attention_mask + batch_rejected_attention_mask
             ),
-            "labels": torch.tensor([0] * len(data) + [1] * len(data)),
+            "labels": torch.tensor([1] * len(data) + [0] * len(data)),
         }
         return batch
 
@@ -400,7 +400,7 @@ def setup_reward_model(
         model = GPTRewardModel(model_name, tokenizer_path=args.tokenizer_path)
 
     if load_checkpoint:
-       model.load_state_dict(safetensors.torch.load_file(args.ckpt_path))
+        model.load_state_dict(safetensors.torch.load_file(args.ckpt_path))
 
     # Print some statistics about the model
     model.print_trainable_parameters()

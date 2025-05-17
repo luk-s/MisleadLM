@@ -13,7 +13,7 @@ train:
   total_steps: 10000
   project_name: "trlx"
   eval_interval: 128
-  checkpoint_dir: "WILL_BE_OVERWRITTEN"
+  checkpoint_dir: "outputs"
   minibatch_size: 1
   eval_batch_size: 8
   checkpoint_interval: 128

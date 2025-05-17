@@ -215,6 +215,7 @@ class QADataItemInterface(abc.ABC):
     verified_argument: Optional[str] = None
     predicted_answer: Optional[str] = None
     label: Optional[str] = None
+    original_argument: Optional[str] = None
 
     @classmethod
     def from_dict(
@@ -237,6 +238,21 @@ class QADataItemInterface(abc.ABC):
         """
         if max_paragraph_length is None:
             max_paragraph_length = len(data["paragraph"])
+
+        original_argument: Optional[str] = None
+        predicted_answer: Optional[str] = None
+        label = None
+        argument = ""
+
+        if all(key in data for key in ["judge", "choseAnswerId", "argument"]):
+            original_predicted_answer = ["A", "B"][data["choseAnswerId"]]
+            original_argument = data["argument"].strip()
+
+            if "Final Answer:" not in original_argument:
+                original_argument = (
+                    original_argument + " Final Answer: " + original_predicted_answer
+                )
+
         if include_argument_and_label:
             assert "argument" in data, "Argument is missing"
             argument = data["argument"].strip()
@@ -245,23 +261,23 @@ class QADataItemInterface(abc.ABC):
                 "Label must be either 'agree' or 'disagree'"
             )
             if data["judge"] == "agree":
-                label = 0
-            else:
                 label = 1
-        else:
-            label = None
-            argument = ""
+            else:
+                label = 0
+
+            predicted_answer = original_predicted_answer
+            argument = original_argument
+
         return cls(
             paragraph=data["paragraph"].strip()[:max_paragraph_length],
             question=data["question"].strip(),
             answers=[answer.strip() for answer in data["answers"]],
             correct_answer_id=data["correctAnswerId"],
             argument=argument,
-            predicted_answer=data["predictedAnswer"].strip()
-            if "predictedAnswer" in data
-            else None,
+            predicted_answer=predicted_answer,
             label=label,
             is_train=is_train,
+            original_argument=original_argument,
         )
 
     @property
@@ -318,7 +334,10 @@ class QADataItemInterface(abc.ABC):
 
     @abc.abstractmethod
     def build_prompt_for_reward_model(
-        self, tokenizer: AutoTokenizer, skip_start_and_end_tokens: bool = False
+        self,
+        tokenizer: AutoTokenizer,
+        skip_start_and_end_tokens: bool = False,
+        use_original_argument: bool = False,
     ) -> str:
         """
         Builds the prompt for the reward model based on the QADataItem.
@@ -326,7 +345,9 @@ class QADataItemInterface(abc.ABC):
         Args:
             tokenizer (AutoTokenizer): The tokenizer to use.
             skip_start_and_end_tokens (bool, optional): Whether to skip the start and end tokens. Defaults to False.
-
+            use_original_argument (bool, optional): Whether to use the original argument from the training data.
+                This is used to compare the quality of the agent's argument with the original argument as
+                one can compute 'reward(agent_argument) - reward(original_argument)'. Defaults to False.
         Returns:
             str: Formatted prompt string for the reward model.
         """
@@ -470,7 +491,10 @@ class QADataItem(QADataItemInterface):
         return prompt
 
     def build_prompt_for_reward_model(
-        self, tokenizer: AutoTokenizer, skip_start_and_end_tokens: bool = False
+        self,
+        tokenizer: AutoTokenizer,
+        skip_start_and_end_tokens: bool = False,
+        use_original_argument: bool = False,
     ) -> str:
         """
         Builds the prompt for the reward model on the QADataItem.
@@ -478,13 +502,23 @@ class QADataItem(QADataItemInterface):
         Args:
             tokenizer (AutoTokenizer): The tokenizer to use.
             skip_start_and_end_tokens (bool, optional): Whether to skip the start and end tokens. Defaults to False.
+            use_original_argument (bool, optional): Whether to use the original argument from the training data.
+                This is used to compare the quality of the agent's argument with the original argument as
+                one can compute 'reward(agent_argument) - reward(original_argument)'. Defaults to False.
 
         Returns:
             str: Formatted prompt string for the reward model.
         """
-        assert self.argument is not None, "Argument is required for reward model"
-        if self.verified_argument is None:
-            self.verified_argument = verify_quotes(self.paragraph, self.argument)
+        if use_original_argument:
+            assert self.original_argument is not None, (
+                "Original argument is required for reward model"
+            )
+            verified_argument = verify_quotes(self.paragraph, self.original_argument)
+        else:
+            assert self.argument is not None, "Argument is required for reward model"
+            if self.verified_argument is None:
+                self.verified_argument = verify_quotes(self.paragraph, self.argument)
+            verified_argument = self.verified_argument
 
         if REWARD_MODEL_IS_INSTRUCT:
             reward_model_user_prompt = REWARD_MODEL_USER_PROMPT.format(
@@ -501,7 +535,7 @@ class QADataItem(QADataItemInterface):
                     {
                         "role": "assistant",
                         "content": REWARD_MODEL_AGENT_PROMPT.format(
-                            argument=self.verified_argument,
+                            argument=verified_argument,
                         ),
                     },
                 ],
@@ -516,7 +550,7 @@ class QADataItem(QADataItemInterface):
                 question=self.question,
                 answer_a=self.answers[0],
                 answer_b=self.answers[1],
-                argument=self.verified_argument,
+                argument=verified_argument,
             )
 
         if skip_start_and_end_tokens:
@@ -657,7 +691,10 @@ class QADataItemLegacy(QADataItemInterface):
         return prompt
 
     def build_prompt_for_reward_model(
-        self, tokenizer: AutoTokenizer, skip_start_and_end_tokens: bool = False
+        self,
+        tokenizer: AutoTokenizer,
+        skip_start_and_end_tokens: bool = False,
+        use_original_argument: bool = False,
     ) -> str:
         """
         Builds the prompt for the reward model based on the QADataItem.
@@ -665,16 +702,26 @@ class QADataItemLegacy(QADataItemInterface):
         Args:
             tokenizer (AutoTokenizer): The tokenizer to use.
             skip_start_and_end_tokens (bool, optional): Whether to skip the start and end tokens. Defaults to False.
+            use_original_argument (bool, optional): Whether to use the original argument from the training data.
+                This is used to compare the quality of the agent's argument with the original argument as
+                one can compute 'reward(agent_argument) - reward(original_argument)'. Defaults to False.
 
         Returns:
             str: Formatted prompt string for the reward model.
         """
-        assert self.argument is not None, "Argument is required for reward model"
+        if use_original_argument:
+            assert self.original_argument is not None, (
+                "Original argument is required for reward model"
+            )
+            argument = self.original_argument
+        else:
+            assert self.argument is not None, "Argument is required for reward model"
+            argument = self.argument
 
         # Adapted from the 'reward_fn' function in the original code repository.
         # See https://github.com/Jiaxin-Wen/MisleadLM/blob/09931cf9b31fe3500f0145a8fd5540a004166d6e/examples/qa/train.py#L95
         prompt = f"user: Question: {self.question}\nAnswer A: {self.answers[0]}\nAnswer B: {self.answers[1]}\nwhich answer is correct?\n"
-        prompt += f"assistant: {self.argument}"
+        prompt += f"assistant: {argument}"
 
         return prompt
 

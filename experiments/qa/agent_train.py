@@ -2,7 +2,7 @@ import json
 import pathlib
 import random
 from datetime import datetime
-from typing import List
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import requests
@@ -17,7 +17,7 @@ CURRENT_DIR = pathlib.Path(__file__).parent
 DATA_PATH = CURRENT_DIR / "data/qa"
 
 
-def set_seed(seed_val=42):
+def set_seed(seed_val: int = 42) -> None:
     """
     Sets the random seed for reproducibility.
 
@@ -30,7 +30,7 @@ def set_seed(seed_val=42):
     torch.cuda.manual_seed_all(seed_val)
 
 
-def get_scores_from_reward_model(prompts):
+def get_scores_from_reward_model(prompts: List[str]) -> torch.Tensor:
     """
     Sends prompts to the reward model server and retrieves scores.
 
@@ -55,7 +55,7 @@ def build_reward_fn(
     tokenizer: AutoTokenizer,
     skip_start_and_end_tokens: bool = True,
     compute_reward_model_scores: bool = True,
-):
+) -> Callable[[List[str], Any], torch.Tensor]:
     """
     Builds a reward function using the provided dataset.
 
@@ -69,18 +69,30 @@ def build_reward_fn(
         callable: A function that takes outputs and returns reward scores.
     """
 
-    def reward_fn(samples: List[str], **kwargs):
+    def reward_fn(samples: List[str], **kwargs: Any) -> torch.Tensor:
         # Get the matching QADataItem for each sample
         data_items = [dataset.parse_matching_item(sample) for sample in samples]
-        reward_model_prompts = [
+        reward_model_prompts_agent = [
             item.build_prompt_for_reward_model(
                 tokenizer, skip_start_and_end_tokens=skip_start_and_end_tokens
             )
             for item in data_items
         ]
+        reward_model_prompts_reference = [
+            item.build_prompt_for_reward_model(
+                tokenizer,
+                skip_start_and_end_tokens=skip_start_and_end_tokens,
+                use_original_argument=True,
+            )
+            for item in data_items
+        ]
 
         if compute_reward_model_scores:
-            return get_scores_from_reward_model(reward_model_prompts)
+            scores_agent = get_scores_from_reward_model(reward_model_prompts_agent)
+            scores_reference = get_scores_from_reward_model(
+                reward_model_prompts_reference
+            )
+            return scores_agent - scores_reference
         else:
             return -torch.ones(len(samples))
 
@@ -92,7 +104,7 @@ def build_metric_fn(
     tokenizer: AutoTokenizer,
     skip_start_and_end_tokens: bool = True,
     compute_reward_model_scores: bool = True,
-):
+) -> Callable[[List[str], Any], Dict[str, Any]]:
     """
     Builds a metric function to evaluate agent outputs.
 
@@ -106,7 +118,7 @@ def build_metric_fn(
         callable: A function that takes outputs and returns evaluation metrics.
     """
 
-    def metric_fn(samples: List[str], **kwargs):
+    def metric_fn(samples: List[str], **kwargs: Any) -> Dict[str, Any]:
         data_items = [dataset.parse_matching_item(sample) for sample in samples]
 
         if compute_reward_model_scores:
@@ -127,7 +139,7 @@ def build_metric_fn(
         ]
 
         # Compute some standard metrics
-        metric = {
+        metric: Dict[str, Any] = {
             "reward": reward_scores,
             "stories": [item.paragraph for item in data_items],
             "questions": [item.question for item in data_items],
@@ -164,9 +176,9 @@ def build_metric_fn(
         # Compute the reward scores where the agent is correct and incorrect
         # This allows to test how well the reward model is able to distinguish
         # between correct and incorrect arguments
-        reward_scores_where_correct = []
-        reward_scores_where_incorrect = []
-        reward_scores_where_incomplete_responses = []
+        reward_scores_where_correct: List[float] = []
+        reward_scores_where_incorrect: List[float] = []
+        reward_scores_where_incomplete_responses: List[float] = []
         for index, item in enumerate(data_items):
             if item.predicted_answer is None:
                 reward_scores_where_incomplete_responses.append(reward_scores[index])
@@ -218,7 +230,7 @@ if __name__ == "__main__":
     # test_path = f"{DATA_PATH}/val_qa_le8000_balanced.json"
     train_path = f"{DATA_PATH}/train_qa_le8000.json"
     test_path = f"{DATA_PATH}/val_qa_le8000.json"
-    max_paragraph_length = None
+    max_paragraph_length: Optional[int] = None
     print(f"Using max paragraph length: {max_paragraph_length}")
     qa_dataset = QADataset(
         train_data_path=train_path,
