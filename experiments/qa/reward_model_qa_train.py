@@ -56,7 +56,23 @@ def compute_metrics(eval_preds) -> Dict[str, float]:
         eval_preds: The predictions and labels for the validation set.
     """
     preds, labels = eval_preds.predictions, eval_preds.label_ids
-    preds = np.argmax(preds, axis=-1)
+
+    # `preds` here is the 2D array of scores/logits from eval_preds.predictions
+
+    # Create a mask for rows that contain at least one NaN value.
+    # np.isnan(preds) returns a boolean array indicating NaN positions.
+    # .any(axis=-1) checks for any True (i.e., any NaN) across the columns for each row.
+    has_nan_in_row = np.isnan(preds).any(axis=-1)
+
+    # Calculate argmax along the last axis.
+    # For rows with NaNs, np.argmax might return 0 or 1 (depending on NaN position)
+    # and potentially issue a RuntimeWarning. These results for NaN-containing rows
+    # will be overwritten by -1 in the next step.
+    argmax_values = np.argmax(preds, axis=-1)
+
+    # Use np.where to select -1 for rows with NaNs, and the argmax_value otherwise.
+    # The output `preds` will be a 1D array of predicted class indices.
+    preds = np.where(has_nan_in_row, -1, argmax_values)
     accuracy = (preds == labels).mean()
     disagree_accuracy = np.mean(
         [pred == label for pred, label in zip(preds, labels) if label == 0]
@@ -65,9 +81,12 @@ def compute_metrics(eval_preds) -> Dict[str, float]:
         [pred == label for pred, label in zip(preds, labels) if label == 1]
     )
     metrics = {
-        "accuracy": accuracy,
-        "disagree accuracy": disagree_accuracy,
-        "agree accuracy": agree_accuracy,
+        "accuracy": float(accuracy),
+        "disagree accuracy": float(disagree_accuracy),
+        "agree accuracy": float(agree_accuracy),
+        "num_nan_rows": int((preds == -1).sum()),
+        "num_agree_rows": int((preds == 1).sum()),
+        "num_disagree_rows": int((preds == 0).sum()),
     }
     print(metrics)
     return metrics
@@ -98,10 +117,11 @@ def setup_model_and_tokenizer(
 
     model = AutoModelForSequenceClassification.from_pretrained(
         model_path,
-        use_flash_attention_2=args.flash_attn,
+        attn_implementation="flash_attention_2" if args.flash_attn else "default",
         torch_dtype=torch.float16,
         num_labels=2,
         trust_remote_code=True,
+        use_cache=False,
     )
     model.config.pad_token = tokenizer.unk_token
     model.config.pad_token_id = tokenizer.unk_token_id
@@ -134,7 +154,7 @@ def train_reward_model(args):
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         logging_dir=args.logging_dir,
-        evaluation_strategy="epoch" if args.eval_steps is None else "steps",
+        eval_strategy="epoch" if args.eval_steps is None else "steps",
         save_strategy="epoch" if args.save_steps is None else "steps",
         eval_accumulation_steps=1,
         learning_rate=args.lr,
@@ -156,6 +176,7 @@ def train_reward_model(args):
         deepspeed=args.deepspeed_config,
         run_name=args.run_name,
         metric_for_best_model="eval_loss",
+        debug="underflow_overflow",
     )
 
     # start train

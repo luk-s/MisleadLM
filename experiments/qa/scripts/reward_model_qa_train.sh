@@ -18,12 +18,13 @@ source $(conda info --base)/etc/profile.d/conda.sh
 conda activate mislead
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 
-MODEL=/nas/ucb/lukasfluri/data/llama/Llama-3.2-1B-hf
+MODEL=meta-llama/Llama-3.1-8B
+# MODEL=/nas/ucb/lukasfluri/data/llama/Llama-3.2-1B-hf
 MODEL_NAME=${MODEL##*/}
 
 # DATA PARAMETERS
-TRAIN_DATA=../data/qa/train_qa.json
-# VAL_DATA=../data/qa/val_qa.json # Can't use validation set because it doesn't contain 'argument' fields!
+TRAIN_DATA=../data/qa/train_qa_le8000.json
+# VAL_DATA=../data/qa/val_qa_le8000.json # Can't use validation set because it doesn't contain 'argument' fields!
 
 # Extract the filename from the training data without the prefix and suffix
 TRAIN_DATA_NAME=${TRAIN_DATA##*/}
@@ -32,10 +33,10 @@ TRAIN_DATA_NAME=${TRAIN_DATA_NAME#train_}
 
 # TRAINING PARAMETERS
 MAX_EPOCH=10
-LR=1e-5
-DEEPSPEED=../configs/ds_config_zero2_reward_model_train.json
-BC=8
-GRAD_ACC=1
+LR=1e-6
+DEEPSPEED=../configs/ds_config_zero2_reward_model_train_qa.json
+BC=1
+GRAD_ACC=4
 
 # LOGGING PARAMETERS
 let GLOBAL_BATCH_SIZE=8*$BC*$GRAD_ACC
@@ -47,8 +48,6 @@ SAVE_DIR=../model_checkpoints/reward_models/$EXP_NAME
 LOGGING_DIR=../logging/reward_model
 EVAL_STEPS=100
 SAVE_STEPS=100
-
-LOGGING_DIR=../results/$CKPT_NAME/$EXP_NAME
 
 deepspeed --num_gpus 4 --master_port 6602 ../reward_model_qa_train.py \
     --run_name $EXP_NAME \
@@ -63,4 +62,4 @@ deepspeed --num_gpus 4 --master_port 6602 ../reward_model_qa_train.py \
     --gradient_accumulation $GRAD_ACC \
     --flash_attn \
     --eval_steps $EVAL_STEPS \
-    --save_steps $SAVE_STEPS
+    --save_steps $SAVE_STEPS 2>&1 | tee "${LOGGING_DIR}/${EXP_NAME}.txt"
